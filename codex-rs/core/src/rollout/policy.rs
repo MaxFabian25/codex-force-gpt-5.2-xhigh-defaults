@@ -49,6 +49,9 @@ pub(crate) fn should_persist_event_msg(ev: &EventMsg) -> bool {
         | EventMsg::UndoCompleted(_)
         | EventMsg::TurnAborted(_) => true,
         EventMsg::ItemCompleted(event) => {
+            // Plan items are derived from streaming tags and are not part of the
+            // raw ResponseItem history, so we persist their completion to replay
+            // them on resume without bloating rollouts with every item lifecycle.
             matches!(event.item, codex_protocol::items::TurnItem::Plan(_))
         }
         EventMsg::Error(_)
