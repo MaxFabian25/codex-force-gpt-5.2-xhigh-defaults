@@ -1474,6 +1474,10 @@ impl App {
                     }
                 }
             }
+            AppEvent::QueueRequestUserInputAnswers { call_id, answers } => {
+                self.chat_widget
+                    .queue_request_user_input_answers(call_id, answers);
+            }
             AppEvent::StartCommitAnimation => {
                 if self
                     .commit_anim_running
