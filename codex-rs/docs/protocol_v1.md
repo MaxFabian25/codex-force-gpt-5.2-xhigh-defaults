@@ -72,7 +72,7 @@ For complete documentation of the `Op` and `EventMsg` variants, refer to [protoc
   - `Op::UserInputAnswer` – Provide answers for a `request_user_input` tool call
   - `Op::ListSkills` – Request skills for one or more cwd values (optionally `force_reload`)
   - `Op::UserTurn` and `Op::OverrideTurnContext` accept an optional `personality` override that updates the model’s communication style
-  - `EventMsg`
+- `EventMsg`
   - `EventMsg::AgentMessage` – Messages from the `Model`
   - `EventMsg::AgentMessageContentDelta` – Streaming assistant text
   - `EventMsg::PlanDelta` – Streaming proposed plan text when the model emits a `<proposed_plan>` block in plan mode
