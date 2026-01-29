@@ -84,9 +84,28 @@ where
     fn finish(&mut self) -> Vec<TaggedLineSegment<T>> {
         let mut segments = Vec::new();
         if !self.line_buffer.is_empty() {
-            // The buffered line never proved to be a tag line.
             let buffered = std::mem::take(&mut self.line_buffer);
-            self.push_text(buffered, &mut segments);
+            let without_newline = buffered.strip_suffix('\n').unwrap_or(&buffered);
+            let slug = without_newline.trim_start().trim_end();
+
+            if let Some(tag) = self.match_open(slug) {
+                if self.active_tag.is_none() {
+                    push_segment(&mut segments, TaggedLineSegment::TagStart(tag));
+                    self.active_tag = Some(tag);
+                } else {
+                    self.push_text(buffered, &mut segments);
+                }
+            } else if let Some(tag) = self.match_close(slug) {
+                if self.active_tag == Some(tag) {
+                    push_segment(&mut segments, TaggedLineSegment::TagEnd(tag));
+                    self.active_tag = None;
+                } else {
+                    self.push_text(buffered, &mut segments);
+                }
+            } else {
+                // The buffered line never proved to be a tag line.
+                self.push_text(buffered, &mut segments);
+            }
         }
         if let Some(tag) = self.active_tag.take() {
             push_segment(&mut segments, TaggedLineSegment::TagEnd(tag));
@@ -308,6 +327,22 @@ mod tests {
     fn closes_unterminated_plan_block_on_finish() {
         let mut parser = ProposedPlanParser::new();
         let mut segments = parser.parse("<proposed_plan>\n- step 1\n");
+        segments.extend(parser.finish());
+
+        assert_eq!(
+            segments,
+            vec![
+                ProposedPlanSegment::ProposedPlanStart,
+                ProposedPlanSegment::ProposedPlanDelta("- step 1\n".to_string()),
+                ProposedPlanSegment::ProposedPlanEnd,
+            ]
+        );
+    }
+
+    #[test]
+    fn closes_tag_line_without_trailing_newline() {
+        let mut parser = ProposedPlanParser::new();
+        let mut segments = parser.parse("<proposed_plan>\n- step 1\n</proposed_plan>");
         segments.extend(parser.finish());
 
         assert_eq!(

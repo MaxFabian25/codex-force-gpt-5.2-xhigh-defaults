@@ -25,6 +25,7 @@ use crate::render::line_utils::line_to_static;
 use crate::render::line_utils::prefix_lines;
 use crate::render::line_utils::push_owned_lines;
 use crate::render::renderable::Renderable;
+use crate::style::proposed_plan_style;
 use crate::style::user_message_style;
 use crate::text_formatting::format_and_truncate_tool_result;
 use crate::text_formatting::truncate_text;
@@ -1745,6 +1746,7 @@ pub(crate) struct ProposedPlanCell {
 impl HistoryCell for ProposedPlanCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = vec![vec!["• ".dim(), "Proposed Plan".bold()].into()];
+        let plan_style = proposed_plan_style();
         let wrap_width = width.saturating_sub(4).max(1) as usize;
         let mut body: Vec<Line<'static>> = Vec::new();
         append_markdown(&self.plan_markdown, Some(wrap_width), &mut body);
@@ -1753,6 +1755,9 @@ impl HistoryCell for ProposedPlanCell {
         }
         lines.extend(prefix_lines(body, "  ".into(), "  ".into()));
         lines
+            .into_iter()
+            .map(|line| line.style(plan_style))
+            .collect()
     }
 }
 
