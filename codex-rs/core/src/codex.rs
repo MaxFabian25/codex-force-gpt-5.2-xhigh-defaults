@@ -3603,7 +3603,13 @@ struct PlanItemState {
     item_id: String,
     started: bool,
     completed: bool,
-    buffer: String,
+    /// Accumulates the current proposed plan text as it streams so we can emit
+    /// the final plan item on completion (or at end-of-message).
+    ///
+    /// Invariant: contains only text from the most recently started
+    /// `<proposed_plan>` block; it is cleared on `ProposedPlanStart` to avoid
+    /// mixing content from multiple blocks in the same turn.
+    plan_text: String,
 }
 
 impl PlanItemState {
@@ -3612,7 +3618,7 @@ impl PlanItemState {
             item_id: format!("{turn_id}-plan"),
             started: false,
             completed: false,
-            buffer: String::new(),
+            plan_text: String::new(),
         }
     }
 
@@ -3632,7 +3638,7 @@ impl PlanItemState {
         if self.completed {
             return;
         }
-        self.buffer.push_str(delta);
+        self.plan_text.push_str(delta);
         if delta.is_empty() {
             return;
         }
@@ -3653,7 +3659,7 @@ impl PlanItemState {
         self.completed = true;
         let item = TurnItem::Plan(PlanItem {
             id: self.item_id.clone(),
-            text: self.buffer.clone(),
+            text: self.plan_text.clone(),
         });
         sess.emit_turn_item_completed(turn_context, item).await;
     }
@@ -3737,7 +3743,7 @@ async fn handle_plan_segments(
                 if let Some(state) = plan_item_state.as_mut()
                     && !state.completed
                 {
-                    state.buffer.clear();
+                    state.plan_text.clear();
                     state.start(sess, turn_context).await;
                 }
             }
