@@ -128,6 +128,7 @@ use crate::model_provider_info::CHAT_WIRE_API_DEPRECATION_SUMMARY;
 use crate::project_doc::get_user_instructions;
 use crate::proposed_plan_parser::ProposedPlanParser;
 use crate::proposed_plan_parser::ProposedPlanSegment;
+use crate::proposed_plan_parser::extract_proposed_plan_text;
 use crate::protocol::AgentMessageContentDeltaEvent;
 use crate::protocol::AgentReasoningSectionBreakEvent;
 use crate::protocol::ApplyPatchApprovalRequestEvent;
@@ -3598,18 +3599,12 @@ struct SamplingRequestResult {
 
 /// Ephemeral per-response state for streaming a single proposed plan.
 /// This is intentionally not persisted or stored in session/state since it
-/// only exists while a response is actively streaming.
+/// only exists while a response is actively streaming. The final plan text
+/// is extracted from the completed assistant message.
 struct PlanItemState {
     item_id: String,
     started: bool,
     completed: bool,
-    /// Accumulates the current proposed plan text as it streams so we can emit
-    /// the final plan item on completion (or at end-of-message).
-    ///
-    /// Invariant: contains only text from the most recently started
-    /// `<proposed_plan>` block; it is cleared on `ProposedPlanStart` to avoid
-    /// mixing content from multiple blocks in the same turn.
-    plan_text: String,
 }
 
 impl PlanItemState {
@@ -3618,7 +3613,6 @@ impl PlanItemState {
             item_id: format!("{turn_id}-plan"),
             started: false,
             completed: false,
-            plan_text: String::new(),
         }
     }
 
@@ -3638,7 +3632,6 @@ impl PlanItemState {
         if self.completed {
             return;
         }
-        self.plan_text.push_str(delta);
         if delta.is_empty() {
             return;
         }
@@ -3652,14 +3645,19 @@ impl PlanItemState {
             .await;
     }
 
-    async fn complete(&mut self, sess: &Session, turn_context: &TurnContext) {
+    async fn complete_with_text(
+        &mut self,
+        sess: &Session,
+        turn_context: &TurnContext,
+        text: String,
+    ) {
         if self.completed || !self.started {
             return;
         }
         self.completed = true;
         let item = TurnItem::Plan(PlanItem {
             id: self.item_id.clone(),
-            text: self.plan_text.clone(),
+            text,
         });
         sess.emit_turn_item_completed(turn_context, item).await;
     }
@@ -3743,7 +3741,6 @@ async fn handle_plan_segments(
                 if let Some(state) = plan_item_state.as_mut()
                     && !state.completed
                 {
-                    state.plan_text.clear();
                     state.start(sess, turn_context).await;
                 }
             }
@@ -3757,13 +3754,24 @@ async fn handle_plan_segments(
                     state.push_delta(sess, turn_context, &delta).await;
                 }
             }
-            ProposedPlanSegment::ProposedPlanEnd => {
-                if let Some(state) = plan_item_state.as_mut() {
-                    state.complete(sess, turn_context).await;
-                }
-            }
+            ProposedPlanSegment::ProposedPlanEnd => {}
         }
     }
+}
+
+fn assistant_message_text(item: &ResponseItem) -> Option<String> {
+    if let ResponseItem::Message { role, content, .. } = item
+        && role == "assistant"
+    {
+        let mut text = String::new();
+        for entry in content {
+            if let ContentItem::OutputText { text: chunk } = entry {
+                text.push_str(chunk);
+            }
+        }
+        return Some(text);
+    }
+    None
 }
 
 async fn drain_in_flight(
@@ -3919,6 +3927,19 @@ async fn try_run_sampling_request(
                     && let ResponseItem::Message { role, .. } = &item
                     && role == "assistant"
                 {
+                    if let Some(plan_text) = assistant_message_text(&item)
+                        .as_deref()
+                        .and_then(extract_proposed_plan_text)
+                        && let Some(state) = plan_item_state.as_mut()
+                    {
+                        if !state.started {
+                            state.start(&sess, &turn_context).await;
+                        }
+                        state
+                            .complete_with_text(&sess, &turn_context, plan_text)
+                            .await;
+                    }
+
                     if let Some(turn_item) = handle_non_tool_response_item(&item, plan_mode).await {
                         if let TurnItem::AgentMessage(agent_message) = &turn_item {
                             let agent_message_id = agent_message.id.clone();

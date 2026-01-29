@@ -276,6 +276,25 @@ pub(crate) fn strip_proposed_plan_blocks(text: &str) -> String {
     out
 }
 
+pub(crate) fn extract_proposed_plan_text(text: &str) -> Option<String> {
+    let mut parser = ProposedPlanParser::new();
+    let mut plan_text = String::new();
+    let mut saw_plan_block = false;
+    for segment in parser.parse(text).into_iter().chain(parser.finish()) {
+        match segment {
+            ProposedPlanSegment::ProposedPlanStart => {
+                saw_plan_block = true;
+                plan_text.clear();
+            }
+            ProposedPlanSegment::ProposedPlanDelta(delta) => {
+                plan_text.push_str(&delta);
+            }
+            ProposedPlanSegment::ProposedPlanEnd | ProposedPlanSegment::Normal(_) => {}
+        }
+    }
+    saw_plan_block.then_some(plan_text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::ProposedPlanParser;
