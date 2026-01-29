@@ -3604,6 +3604,9 @@ struct PlanItemState {
 }
 
 impl PlanItemState {
+    // Ephemeral per-response state for streaming a single proposed plan.
+    // This is intentionally not persisted or stored in session/state since it
+    // only exists while a response is actively streaming.
     fn new(turn_id: &str) -> Self {
         Self {
             item_id: format!("{turn_id}-plan"),
@@ -3663,6 +3666,8 @@ async fn maybe_emit_pending_agent_message_start(
     started: &mut HashSet<String>,
     item_id: &str,
 ) {
+    // In plan mode we defer agent message starts until we see non-plan text, so
+    // plan-only outputs never show up as empty assistant messages.
     if started.contains(item_id) {
         return;
     }
@@ -3673,6 +3678,7 @@ async fn maybe_emit_pending_agent_message_start(
 }
 
 fn agent_message_text(item: &codex_protocol::items::AgentMessageItem) -> String {
+    // Agent messages are text-only today; concatenate all text entries.
     item.content
         .iter()
         .map(|entry| match entry {
@@ -3690,6 +3696,9 @@ async fn handle_plan_segments(
     item_id: &str,
     segments: Vec<ProposedPlanSegment>,
 ) {
+    // Split the stream into normal assistant text vs. proposed plan content.
+    // Normal text becomes AgentMessage deltas; plan content becomes PlanDelta +
+    // TurnItem::Plan.
     for segment in segments {
         match segment {
             ProposedPlanSegment::Normal(delta) => {
