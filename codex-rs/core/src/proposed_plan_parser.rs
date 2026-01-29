@@ -119,22 +119,22 @@ where
         let without_newline = line.strip_suffix('\n').unwrap_or(&line);
         let slug = without_newline.trim_start().trim_end();
 
-        if let Some(tag) = self.match_open(slug) {
-            if self.active_tag.is_none() {
-                push_segment(segments, TaggedLineSegment::TagStart(tag));
-                self.active_tag = Some(tag);
-                self.detect_tag = true;
-                return;
-            }
+        if let Some(tag) = self.match_open(slug)
+            && self.active_tag.is_none()
+        {
+            push_segment(segments, TaggedLineSegment::TagStart(tag));
+            self.active_tag = Some(tag);
+            self.detect_tag = true;
+            return;
         }
 
-        if let Some(tag) = self.match_close(slug) {
-            if self.active_tag == Some(tag) {
-                push_segment(segments, TaggedLineSegment::TagEnd(tag));
-                self.active_tag = None;
-                self.detect_tag = true;
-                return;
-            }
+        if let Some(tag) = self.match_close(slug)
+            && self.active_tag == Some(tag)
+        {
+            push_segment(segments, TaggedLineSegment::TagEnd(tag));
+            self.active_tag = None;
+            self.detect_tag = true;
+            return;
         }
 
         self.detect_tag = true;
