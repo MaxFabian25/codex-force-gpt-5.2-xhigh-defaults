@@ -3688,6 +3688,16 @@ fn agent_message_text(item: &codex_protocol::items::AgentMessageItem) -> String 
         .collect()
 }
 
+fn collect_plan_normal_text(segments: Vec<ProposedPlanSegment>) -> String {
+    let mut out = String::new();
+    for segment in segments {
+        if let ProposedPlanSegment::Normal(text) = segment {
+            out.push_str(&text);
+        }
+    }
+    out
+}
+
 /// Split the stream into normal assistant text vs. proposed plan content.
 /// Normal text becomes AgentMessage deltas; plan content becomes PlanDelta +
 /// TurnItem::Plan.
@@ -3832,9 +3842,15 @@ async fn try_run_sampling_request(
     let mut should_emit_turn_diff = false;
     let plan_mode = turn_context.collaboration_mode_kind == ModeKind::Plan;
     let mut proposed_plan_parser = plan_mode.then(ProposedPlanParser::new);
+    let mut reasoning_summary_plan_parser = plan_mode.then(ProposedPlanParser::new);
+    let mut reasoning_raw_plan_parser = plan_mode.then(ProposedPlanParser::new);
     let mut pending_agent_message_items: HashMap<String, TurnItem> = HashMap::new();
     let mut started_agent_message_items: HashSet<String> = HashSet::new();
     let mut plan_item_state = plan_mode.then(|| PlanItemState::new(&turn_context.sub_id));
+    let mut last_reasoning_summary_index: Option<i64> = None;
+    let mut last_reasoning_raw_index: Option<i64> = None;
+    let mut last_reasoning_summary_item_id: Option<String> = None;
+    let mut last_reasoning_raw_item_id: Option<String> = None;
     let receiving_span = trace_span!("receiving_stream");
     let outcome: CodexResult<SamplingRequestResult> = loop {
         let handle_responses = trace_span!(
@@ -4018,6 +4034,44 @@ async fn try_run_sampling_request(
                         .await;
                     }
                 }
+                if let Some(parser) = reasoning_summary_plan_parser.as_mut()
+                    && let (Some(item_id), Some(summary_index)) = (
+                        last_reasoning_summary_item_id.as_ref(),
+                        last_reasoning_summary_index,
+                    )
+                {
+                    let tail = collect_plan_normal_text(parser.finish());
+                    if !tail.is_empty() {
+                        let event = ReasoningContentDeltaEvent {
+                            thread_id: sess.conversation_id.to_string(),
+                            turn_id: turn_context.sub_id.clone(),
+                            item_id: item_id.clone(),
+                            delta: tail,
+                            summary_index,
+                        };
+                        sess.send_event(&turn_context, EventMsg::ReasoningContentDelta(event))
+                            .await;
+                    }
+                }
+                if let Some(parser) = reasoning_raw_plan_parser.as_mut()
+                    && let (Some(item_id), Some(content_index)) = (
+                        last_reasoning_raw_item_id.as_ref(),
+                        last_reasoning_raw_index,
+                    )
+                {
+                    let tail = collect_plan_normal_text(parser.finish());
+                    if !tail.is_empty() {
+                        let event = ReasoningRawContentDeltaEvent {
+                            thread_id: sess.conversation_id.to_string(),
+                            turn_id: turn_context.sub_id.clone(),
+                            item_id: item_id.clone(),
+                            delta: tail,
+                            content_index,
+                        };
+                        sess.send_event(&turn_context, EventMsg::ReasoningRawContentDelta(event))
+                            .await;
+                    }
+                }
                 sess.update_token_usage_info(&turn_context, token_usage.as_ref())
                     .await;
                 should_emit_turn_diff = true;
@@ -4068,11 +4122,21 @@ async fn try_run_sampling_request(
                 summary_index,
             } => {
                 if let Some(active) = active_item.as_ref() {
+                    let filtered = if let Some(parser) = reasoning_summary_plan_parser.as_mut() {
+                        last_reasoning_summary_index = Some(summary_index);
+                        last_reasoning_summary_item_id = Some(active.id());
+                        collect_plan_normal_text(parser.parse(&delta))
+                    } else {
+                        delta
+                    };
+                    if filtered.is_empty() {
+                        continue;
+                    }
                     let event = ReasoningContentDeltaEvent {
                         thread_id: sess.conversation_id.to_string(),
                         turn_id: turn_context.sub_id.clone(),
                         item_id: active.id(),
-                        delta,
+                        delta: filtered,
                         summary_index,
                     };
                     sess.send_event(&turn_context, EventMsg::ReasoningContentDelta(event))
@@ -4098,11 +4162,21 @@ async fn try_run_sampling_request(
                 content_index,
             } => {
                 if let Some(active) = active_item.as_ref() {
+                    let filtered = if let Some(parser) = reasoning_raw_plan_parser.as_mut() {
+                        last_reasoning_raw_index = Some(content_index);
+                        last_reasoning_raw_item_id = Some(active.id());
+                        collect_plan_normal_text(parser.parse(&delta))
+                    } else {
+                        delta
+                    };
+                    if filtered.is_empty() {
+                        continue;
+                    }
                     let event = ReasoningRawContentDeltaEvent {
                         thread_id: sess.conversation_id.to_string(),
                         turn_id: turn_context.sub_id.clone(),
                         item_id: active.id(),
-                        delta,
+                        delta: filtered,
                         content_index,
                     };
                     sess.send_event(&turn_context, EventMsg::ReasoningRawContentDelta(event))

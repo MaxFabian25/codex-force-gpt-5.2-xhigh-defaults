@@ -8,6 +8,14 @@ You are in **Plan Mode** until a developer message explicitly ends it.
 
 Plan Mode is not changed by user intent, tone, or imperative language. If a user asks for execution while still in Plan Mode, treat it as a request to **plan the execution**, not perform it.
 
+## Plan Mode vs update_plan tool
+
+Plan Mode is a collaboration mode that restricts behavior and requires a `<proposed_plan>` block.
+
+`update_plan` is a checklist/progress tool; it does not enter or exit Plan Mode.
+
+Plan Mode output streams as `EventMsg::PlanDelta`; `update_plan` emits a tool call event.
+
 ## Execution vs. mutation in Plan Mode
 
 You may explore and execute **non-mutating** actions that improve the plan. You must not perform **mutating** actions.

@@ -48,6 +48,9 @@ pub(crate) fn should_persist_event_msg(ev: &EventMsg) -> bool {
         | EventMsg::ThreadRolledBack(_)
         | EventMsg::UndoCompleted(_)
         | EventMsg::TurnAborted(_) => true,
+        EventMsg::ItemCompleted(event) => {
+            matches!(event.item, codex_protocol::items::TurnItem::Plan(_))
+        }
         EventMsg::Error(_)
         | EventMsg::Warning(_)
         | EventMsg::TurnStarted(_)
@@ -88,7 +91,6 @@ pub(crate) fn should_persist_event_msg(ev: &EventMsg) -> bool {
         | EventMsg::ViewImageToolCall(_)
         | EventMsg::DeprecationNotice(_)
         | EventMsg::ItemStarted(_)
-        | EventMsg::ItemCompleted(_)
         | EventMsg::AgentMessageContentDelta(_)
         | EventMsg::PlanDelta(_)
         | EventMsg::ReasoningContentDelta(_)
