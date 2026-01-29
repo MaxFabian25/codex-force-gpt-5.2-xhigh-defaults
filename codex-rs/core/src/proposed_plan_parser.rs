@@ -1,30 +1,48 @@
 const OPEN_TAG: &str = "<proposed_plan>";
 const CLOSE_TAG: &str = "</proposed_plan>";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ProposedPlanSegment {
-    Normal(String),
-    ProposedPlanStart,
-    ProposedPlanDelta(String),
-    ProposedPlanEnd,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TagSpec<T> {
+    open: &'static str,
+    close: &'static str,
+    tag: T,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TaggedLineSegment<T> {
+    Normal(String),
+    TagStart(T),
+    TagDelta(T, String),
+    TagEnd(T),
+}
+
+/// Line-based tag parser that buffers each line until it can disprove a tag
+/// prefix. This allows tags to be detected correctly while streaming.
 #[derive(Debug, Default)]
-pub(crate) struct ProposedPlanParser {
-    in_plan: bool,
+struct TaggedLineParser<T>
+where
+    T: Copy + Eq,
+{
+    specs: Vec<TagSpec<T>>,
+    active_tag: Option<T>,
     detect_tag: bool,
     line_buffer: String,
 }
 
-impl ProposedPlanParser {
-    pub(crate) fn new() -> Self {
+impl<T> TaggedLineParser<T>
+where
+    T: Copy + Eq,
+{
+    fn new(specs: Vec<TagSpec<T>>) -> Self {
         Self {
+            specs,
+            active_tag: None,
             detect_tag: true,
-            ..Self::default()
+            line_buffer: String::new(),
         }
     }
 
-    pub(crate) fn parse(&mut self, delta: &str) -> Vec<ProposedPlanSegment> {
+    fn parse(&mut self, delta: &str) -> Vec<TaggedLineSegment<T>> {
         let mut segments = Vec::new();
         let mut run = String::new();
 
@@ -39,7 +57,7 @@ impl ProposedPlanParser {
                     continue;
                 }
                 let slug = self.line_buffer.trim_start();
-                if slug.is_empty() || is_tag_prefix(slug) {
+                if slug.is_empty() || self.is_tag_prefix(slug) {
                     continue;
                 }
                 // This line cannot be a tag line, so flush it immediately.
@@ -63,89 +81,168 @@ impl ProposedPlanParser {
         segments
     }
 
-    pub(crate) fn finish(&mut self) -> Vec<ProposedPlanSegment> {
+    fn finish(&mut self) -> Vec<TaggedLineSegment<T>> {
         let mut segments = Vec::new();
         if !self.line_buffer.is_empty() {
             // The buffered line never proved to be a tag line.
             let buffered = std::mem::take(&mut self.line_buffer);
             self.push_text(buffered, &mut segments);
         }
-        if self.in_plan {
-            push_segment(&mut segments, ProposedPlanSegment::ProposedPlanEnd);
-            self.in_plan = false;
+        if let Some(tag) = self.active_tag.take() {
+            push_segment(&mut segments, TaggedLineSegment::TagEnd(tag));
         }
         self.detect_tag = true;
         segments
     }
 
-    fn finish_line(&mut self, segments: &mut Vec<ProposedPlanSegment>) {
+    fn finish_line(&mut self, segments: &mut Vec<TaggedLineSegment<T>>) {
         let line = std::mem::take(&mut self.line_buffer);
         let without_newline = line.strip_suffix('\n').unwrap_or(&line);
         let slug = without_newline.trim_start().trim_end();
 
-        if slug == OPEN_TAG {
-            if !self.in_plan {
-                push_segment(segments, ProposedPlanSegment::ProposedPlanStart);
-                self.in_plan = true;
+        if let Some(tag) = self.match_open(slug) {
+            if self.active_tag.is_none() {
+                push_segment(segments, TaggedLineSegment::TagStart(tag));
+                self.active_tag = Some(tag);
+                self.detect_tag = true;
+                return;
             }
-            self.detect_tag = true;
-            return;
         }
 
-        if slug == CLOSE_TAG {
-            if self.in_plan {
-                push_segment(segments, ProposedPlanSegment::ProposedPlanEnd);
-                self.in_plan = false;
+        if let Some(tag) = self.match_close(slug) {
+            if self.active_tag == Some(tag) {
+                push_segment(segments, TaggedLineSegment::TagEnd(tag));
+                self.active_tag = None;
+                self.detect_tag = true;
+                return;
             }
-            self.detect_tag = true;
-            return;
         }
 
         self.detect_tag = true;
         self.push_text(line, segments);
     }
 
-    fn push_text(&self, text: String, segments: &mut Vec<ProposedPlanSegment>) {
-        if self.in_plan {
-            push_segment(segments, ProposedPlanSegment::ProposedPlanDelta(text));
+    fn push_text(&self, text: String, segments: &mut Vec<TaggedLineSegment<T>>) {
+        if let Some(tag) = self.active_tag {
+            push_segment(segments, TaggedLineSegment::TagDelta(tag, text));
         } else {
-            push_segment(segments, ProposedPlanSegment::Normal(text));
+            push_segment(segments, TaggedLineSegment::Normal(text));
+        }
+    }
+
+    fn is_tag_prefix(&self, slug: &str) -> bool {
+        self.specs
+            .iter()
+            .any(|spec| spec.open.starts_with(slug) || spec.close.starts_with(slug))
+    }
+
+    fn match_open(&self, slug: &str) -> Option<T> {
+        self.specs
+            .iter()
+            .find(|spec| spec.open == slug)
+            .map(|spec| spec.tag)
+    }
+
+    fn match_close(&self, slug: &str) -> Option<T> {
+        self.specs
+            .iter()
+            .find(|spec| spec.close == slug)
+            .map(|spec| spec.tag)
+    }
+}
+
+fn push_segment<T>(segments: &mut Vec<TaggedLineSegment<T>>, segment: TaggedLineSegment<T>)
+where
+    T: Copy + Eq,
+{
+    match segment {
+        TaggedLineSegment::Normal(delta) => {
+            if delta.is_empty() {
+                return;
+            }
+            if let Some(TaggedLineSegment::Normal(existing)) = segments.last_mut() {
+                existing.push_str(&delta);
+                return;
+            }
+            segments.push(TaggedLineSegment::Normal(delta));
+        }
+        TaggedLineSegment::TagDelta(tag, delta) => {
+            if delta.is_empty() {
+                return;
+            }
+            if let Some(TaggedLineSegment::TagDelta(existing_tag, existing)) = segments.last_mut()
+                && *existing_tag == tag
+            {
+                existing.push_str(&delta);
+                return;
+            }
+            segments.push(TaggedLineSegment::TagDelta(tag, delta));
+        }
+        TaggedLineSegment::TagStart(tag) => {
+            segments.push(TaggedLineSegment::TagStart(tag));
+        }
+        TaggedLineSegment::TagEnd(tag) => {
+            segments.push(TaggedLineSegment::TagEnd(tag));
         }
     }
 }
 
-fn is_tag_prefix(slug: &str) -> bool {
-    OPEN_TAG.starts_with(slug) || CLOSE_TAG.starts_with(slug)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanTag {
+    ProposedPlan,
 }
 
-fn push_segment(segments: &mut Vec<ProposedPlanSegment>, segment: ProposedPlanSegment) {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ProposedPlanSegment {
+    Normal(String),
+    ProposedPlanStart,
+    ProposedPlanDelta(String),
+    ProposedPlanEnd,
+}
+
+#[derive(Debug)]
+pub(crate) struct ProposedPlanParser {
+    parser: TaggedLineParser<PlanTag>,
+}
+
+impl ProposedPlanParser {
+    pub(crate) fn new() -> Self {
+        Self {
+            parser: TaggedLineParser::new(vec![TagSpec {
+                open: OPEN_TAG,
+                close: CLOSE_TAG,
+                tag: PlanTag::ProposedPlan,
+            }]),
+        }
+    }
+
+    pub(crate) fn parse(&mut self, delta: &str) -> Vec<ProposedPlanSegment> {
+        self.parser
+            .parse(delta)
+            .into_iter()
+            .map(map_plan_segment)
+            .collect()
+    }
+
+    pub(crate) fn finish(&mut self) -> Vec<ProposedPlanSegment> {
+        self.parser
+            .finish()
+            .into_iter()
+            .map(map_plan_segment)
+            .collect()
+    }
+}
+
+fn map_plan_segment(segment: TaggedLineSegment<PlanTag>) -> ProposedPlanSegment {
     match segment {
-        ProposedPlanSegment::Normal(delta) => {
-            if delta.is_empty() {
-                return;
-            }
-            if let Some(ProposedPlanSegment::Normal(existing)) = segments.last_mut() {
-                existing.push_str(&delta);
-                return;
-            }
-            segments.push(ProposedPlanSegment::Normal(delta));
+        TaggedLineSegment::Normal(text) => ProposedPlanSegment::Normal(text),
+        TaggedLineSegment::TagStart(PlanTag::ProposedPlan) => {
+            ProposedPlanSegment::ProposedPlanStart
         }
-        ProposedPlanSegment::ProposedPlanDelta(delta) => {
-            if delta.is_empty() {
-                return;
-            }
-            if let Some(ProposedPlanSegment::ProposedPlanDelta(existing)) = segments.last_mut() {
-                existing.push_str(&delta);
-                return;
-            }
-            segments.push(ProposedPlanSegment::ProposedPlanDelta(delta));
+        TaggedLineSegment::TagDelta(PlanTag::ProposedPlan, text) => {
+            ProposedPlanSegment::ProposedPlanDelta(text)
         }
-        ProposedPlanSegment::ProposedPlanStart => {
-            segments.push(ProposedPlanSegment::ProposedPlanStart);
-        }
-        ProposedPlanSegment::ProposedPlanEnd => {
-            segments.push(ProposedPlanSegment::ProposedPlanEnd);
-        }
+        TaggedLineSegment::TagEnd(PlanTag::ProposedPlan) => ProposedPlanSegment::ProposedPlanEnd,
     }
 }
 

@@ -3659,7 +3659,8 @@ impl PlanItemState {
     }
 }
 
-/// In plan mode we defer agent message starts until we see non-plan text, so
+/// In plan mode we defer agent message starts until the parser emits non-plan
+/// text. The parser buffers each line until it can rule out a tag prefix, so
 /// plan-only outputs never show up as empty assistant messages.
 async fn maybe_emit_pending_agent_message_start(
     sess: &Session,
