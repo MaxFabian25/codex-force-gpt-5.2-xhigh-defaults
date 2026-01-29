@@ -1,18 +1,12 @@
 const OPEN_TAG: &str = "<proposed_plan>";
 const CLOSE_TAG: &str = "</proposed_plan>";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ProposedPlanSegment {
-    Normal,
-    ProposedPlanStart,
-    ProposedPlanDelta,
-    ProposedPlanEnd,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ParsedAgentDelta {
-    pub(crate) segment: ProposedPlanSegment,
-    pub(crate) delta: String,
+pub(crate) enum ProposedPlanSegment {
+    Normal(String),
+    ProposedPlanStart,
+    ProposedPlanDelta(String),
+    ProposedPlanEnd,
 }
 
 #[derive(Debug, Default)]
@@ -30,7 +24,7 @@ impl ProposedPlanParser {
         }
     }
 
-    pub(crate) fn parse(&mut self, delta: &str) -> Vec<ParsedAgentDelta> {
+    pub(crate) fn parse(&mut self, delta: &str) -> Vec<ProposedPlanSegment> {
         let mut segments = Vec::new();
         let mut run = String::new();
 
@@ -69,7 +63,7 @@ impl ProposedPlanParser {
         segments
     }
 
-    pub(crate) fn finish(&mut self) -> Vec<ParsedAgentDelta> {
+    pub(crate) fn finish(&mut self) -> Vec<ProposedPlanSegment> {
         let mut segments = Vec::new();
         if !self.line_buffer.is_empty() {
             // The buffered line never proved to be a tag line.
@@ -77,29 +71,21 @@ impl ProposedPlanParser {
             self.push_text(buffered, &mut segments);
         }
         if self.in_plan {
-            push_segment(
-                &mut segments,
-                ProposedPlanSegment::ProposedPlanEnd,
-                String::new(),
-            );
+            push_segment(&mut segments, ProposedPlanSegment::ProposedPlanEnd);
             self.in_plan = false;
         }
         self.detect_tag = true;
         segments
     }
 
-    fn finish_line(&mut self, segments: &mut Vec<ParsedAgentDelta>) {
+    fn finish_line(&mut self, segments: &mut Vec<ProposedPlanSegment>) {
         let line = std::mem::take(&mut self.line_buffer);
         let without_newline = line.strip_suffix('\n').unwrap_or(&line);
         let slug = without_newline.trim_start().trim_end();
 
         if slug == OPEN_TAG {
             if !self.in_plan {
-                push_segment(
-                    segments,
-                    ProposedPlanSegment::ProposedPlanStart,
-                    String::new(),
-                );
+                push_segment(segments, ProposedPlanSegment::ProposedPlanStart);
                 self.in_plan = true;
             }
             self.detect_tag = true;
@@ -108,11 +94,7 @@ impl ProposedPlanParser {
 
         if slug == CLOSE_TAG {
             if self.in_plan {
-                push_segment(
-                    segments,
-                    ProposedPlanSegment::ProposedPlanEnd,
-                    String::new(),
-                );
+                push_segment(segments, ProposedPlanSegment::ProposedPlanEnd);
                 self.in_plan = false;
             }
             self.detect_tag = true;
@@ -123,13 +105,12 @@ impl ProposedPlanParser {
         self.push_text(line, segments);
     }
 
-    fn push_text(&self, text: String, segments: &mut Vec<ParsedAgentDelta>) {
-        let segment = if self.in_plan {
-            ProposedPlanSegment::ProposedPlanDelta
+    fn push_text(&self, text: String, segments: &mut Vec<ProposedPlanSegment>) {
+        if self.in_plan {
+            push_segment(segments, ProposedPlanSegment::ProposedPlanDelta(text));
         } else {
-            ProposedPlanSegment::Normal
-        };
-        push_segment(segments, segment, text);
+            push_segment(segments, ProposedPlanSegment::Normal(text));
+        }
     }
 }
 
@@ -137,34 +118,43 @@ fn is_tag_prefix(slug: &str) -> bool {
     OPEN_TAG.starts_with(slug) || CLOSE_TAG.starts_with(slug)
 }
 
-fn push_segment(segments: &mut Vec<ParsedAgentDelta>, segment: ProposedPlanSegment, delta: String) {
-    if delta.is_empty()
-        && matches!(
-            segment,
-            ProposedPlanSegment::Normal | ProposedPlanSegment::ProposedPlanDelta
-        )
-    {
-        return;
+fn push_segment(segments: &mut Vec<ProposedPlanSegment>, segment: ProposedPlanSegment) {
+    match segment {
+        ProposedPlanSegment::Normal(delta) => {
+            if delta.is_empty() {
+                return;
+            }
+            if let Some(ProposedPlanSegment::Normal(existing)) = segments.last_mut() {
+                existing.push_str(&delta);
+                return;
+            }
+            segments.push(ProposedPlanSegment::Normal(delta));
+        }
+        ProposedPlanSegment::ProposedPlanDelta(delta) => {
+            if delta.is_empty() {
+                return;
+            }
+            if let Some(ProposedPlanSegment::ProposedPlanDelta(existing)) = segments.last_mut() {
+                existing.push_str(&delta);
+                return;
+            }
+            segments.push(ProposedPlanSegment::ProposedPlanDelta(delta));
+        }
+        ProposedPlanSegment::ProposedPlanStart => {
+            segments.push(ProposedPlanSegment::ProposedPlanStart);
+        }
+        ProposedPlanSegment::ProposedPlanEnd => {
+            segments.push(ProposedPlanSegment::ProposedPlanEnd);
+        }
     }
-    if let Some(last) = segments.last_mut()
-        && last.segment == segment
-        && matches!(
-            segment,
-            ProposedPlanSegment::Normal | ProposedPlanSegment::ProposedPlanDelta
-        )
-    {
-        last.delta.push_str(&delta);
-        return;
-    }
-    segments.push(ParsedAgentDelta { segment, delta });
 }
 
 pub(crate) fn strip_proposed_plan_blocks(text: &str) -> String {
     let mut parser = ProposedPlanParser::new();
     let mut out = String::new();
     for segment in parser.parse(text).into_iter().chain(parser.finish()) {
-        if matches!(segment.segment, ProposedPlanSegment::Normal) {
-            out.push_str(&segment.delta);
+        if let ProposedPlanSegment::Normal(delta) = segment {
+            out.push_str(&delta);
         }
     }
     out
@@ -172,7 +162,6 @@ pub(crate) fn strip_proposed_plan_blocks(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ParsedAgentDelta;
     use super::ProposedPlanParser;
     use super::ProposedPlanSegment;
     use super::strip_proposed_plan_blocks;
@@ -195,26 +184,11 @@ mod tests {
         assert_eq!(
             segments,
             vec![
-                ParsedAgentDelta {
-                    segment: ProposedPlanSegment::Normal,
-                    delta: "Intro text\n".to_string(),
-                },
-                ParsedAgentDelta {
-                    segment: ProposedPlanSegment::ProposedPlanStart,
-                    delta: String::new(),
-                },
-                ParsedAgentDelta {
-                    segment: ProposedPlanSegment::ProposedPlanDelta,
-                    delta: "- step 1\n".to_string(),
-                },
-                ParsedAgentDelta {
-                    segment: ProposedPlanSegment::ProposedPlanEnd,
-                    delta: String::new(),
-                },
-                ParsedAgentDelta {
-                    segment: ProposedPlanSegment::Normal,
-                    delta: "Outro".to_string(),
-                },
+                ProposedPlanSegment::Normal("Intro text\n".to_string()),
+                ProposedPlanSegment::ProposedPlanStart,
+                ProposedPlanSegment::ProposedPlanDelta("- step 1\n".to_string()),
+                ProposedPlanSegment::ProposedPlanEnd,
+                ProposedPlanSegment::Normal("Outro".to_string()),
             ]
         );
     }
@@ -227,10 +201,9 @@ mod tests {
 
         assert_eq!(
             segments,
-            vec![ParsedAgentDelta {
-                segment: ProposedPlanSegment::Normal,
-                delta: "  <proposed_plan> extra\n".to_string(),
-            }]
+            vec![ProposedPlanSegment::Normal(
+                "  <proposed_plan> extra\n".to_string()
+            )]
         );
     }
 
@@ -243,18 +216,9 @@ mod tests {
         assert_eq!(
             segments,
             vec![
-                ParsedAgentDelta {
-                    segment: ProposedPlanSegment::ProposedPlanStart,
-                    delta: String::new(),
-                },
-                ParsedAgentDelta {
-                    segment: ProposedPlanSegment::ProposedPlanDelta,
-                    delta: "- step 1\n".to_string(),
-                },
-                ParsedAgentDelta {
-                    segment: ProposedPlanSegment::ProposedPlanEnd,
-                    delta: String::new(),
-                },
+                ProposedPlanSegment::ProposedPlanStart,
+                ProposedPlanSegment::ProposedPlanDelta("- step 1\n".to_string()),
+                ProposedPlanSegment::ProposedPlanEnd,
             ]
         );
     }

@@ -126,7 +126,6 @@ use crate::mentions::collect_explicit_app_paths;
 use crate::mentions::collect_tool_mentions_from_messages;
 use crate::model_provider_info::CHAT_WIRE_API_DEPRECATION_SUMMARY;
 use crate::project_doc::get_user_instructions;
-use crate::proposed_plan_parser::ParsedAgentDelta;
 use crate::proposed_plan_parser::ProposedPlanParser;
 use crate::proposed_plan_parser::ProposedPlanSegment;
 use crate::protocol::AgentMessageContentDeltaEvent;
@@ -3689,12 +3688,12 @@ async fn handle_plan_segments(
     pending_agent_message_items: &mut HashMap<String, TurnItem>,
     started_agent_message_items: &mut HashSet<String>,
     item_id: &str,
-    segments: Vec<ParsedAgentDelta>,
+    segments: Vec<ProposedPlanSegment>,
 ) {
     for segment in segments {
-        match segment.segment {
-            ProposedPlanSegment::Normal => {
-                if !segment.delta.is_empty() {
+        match segment {
+            ProposedPlanSegment::Normal(delta) => {
+                if !delta.is_empty() {
                     maybe_emit_pending_agent_message_start(
                         sess,
                         turn_context,
@@ -3703,13 +3702,12 @@ async fn handle_plan_segments(
                         item_id,
                     )
                     .await;
-                }
-                if !segment.delta.is_empty() {
+
                     let event = AgentMessageContentDeltaEvent {
                         thread_id: sess.conversation_id.to_string(),
                         turn_id: turn_context.sub_id.clone(),
                         item_id: item_id.to_string(),
-                        delta: segment.delta,
+                        delta,
                     };
                     sess.send_event(turn_context, EventMsg::AgentMessageContentDelta(event))
                         .await;
@@ -3723,14 +3721,14 @@ async fn handle_plan_segments(
                     state.start(sess, turn_context).await;
                 }
             }
-            ProposedPlanSegment::ProposedPlanDelta => {
+            ProposedPlanSegment::ProposedPlanDelta(delta) => {
                 if let Some(state) = plan_item_state.as_mut()
                     && !state.completed
                 {
                     if !state.started {
                         state.start(sess, turn_context).await;
                     }
-                    state.push_delta(sess, turn_context, &segment.delta).await;
+                    state.push_delta(sess, turn_context, &delta).await;
                 }
             }
             ProposedPlanSegment::ProposedPlanEnd => {
