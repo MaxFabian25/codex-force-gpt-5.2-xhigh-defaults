@@ -176,7 +176,6 @@ use crate::skills::injection::app_id_from_path;
 use crate::skills::injection::tool_kind_for_path;
 use crate::skills::resolve_skill_dependencies_for_turn;
 use crate::state::ActiveTurn;
-use crate::state::PendingUserInput;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 use crate::state_db;
@@ -1595,20 +1594,14 @@ impl Session {
         args: RequestUserInputArgs,
     ) -> Option<RequestUserInputResponse> {
         let sub_id = turn_context.sub_id.clone();
-        let RequestUserInputArgs { questions } = args;
-        let question_ids = questions
-            .iter()
-            .map(|question| question.id.clone())
-            .collect::<HashSet<_>>();
         let (tx_response, rx_response) = oneshot::channel();
-        let pending = PendingUserInput::new(call_id.clone(), question_ids, tx_response);
         let event_id = sub_id.clone();
         let prev_entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_user_input(sub_id, pending)
+                    ts.insert_pending_user_input(sub_id, tx_response)
                 }
                 None => None,
             }
@@ -1620,7 +1613,7 @@ impl Session {
         let event = EventMsg::RequestUserInput(RequestUserInputEvent {
             call_id,
             turn_id: turn_context.sub_id.clone(),
-            questions,
+            questions: args.questions,
         });
         self.send_event(turn_context, event).await;
         rx_response.await.ok()
@@ -1631,52 +1624,43 @@ impl Session {
         sub_id: &str,
         response: RequestUserInputResponse,
     ) {
-        let update = {
+        let entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.update_pending_user_input(sub_id, response.clone())
+                    ts.remove_pending_user_input(sub_id)
                 }
                 None => None,
             }
         };
 
-        let Some(update) = update else {
-            let content = match serde_json::to_string(&response) {
-                Ok(content) => content,
-                Err(err) => {
-                    warn!(
-                        "failed to serialize request_user_input response for call_id: {sub_id}: {err}"
-                    );
-                    return;
-                }
-            };
-            let response_item = ResponseItem::FunctionCallOutput {
-                call_id: sub_id.to_string(),
-                output: FunctionCallOutputPayload {
-                    content,
-                    success: Some(true),
-                    ..Default::default()
-                },
-            };
-            let turn_context = self.new_default_turn().await;
-            self.record_conversation_items(&turn_context, &[response_item])
-                .await;
-            return;
-        };
-
-        let merged = update.merged;
-        let is_complete = update.is_complete;
-
-        if !is_complete {
-            return;
-        }
-
-        if let Some(tx_response) = update.tx {
-            tx_response.send(merged).ok();
-        } else {
-            warn!("request_user_input completed without a sender for sub_id: {sub_id}");
+        match entry {
+            Some(tx_response) => {
+                tx_response.send(response).ok();
+            }
+            None => {
+                let content = match serde_json::to_string(&response) {
+                    Ok(content) => content,
+                    Err(err) => {
+                        warn!(
+                            "failed to serialize request_user_input response for call_id: {sub_id}: {err}"
+                        );
+                        return;
+                    }
+                };
+                let response_item = ResponseItem::FunctionCallOutput {
+                    call_id: sub_id.to_string(),
+                    output: FunctionCallOutputPayload {
+                        content,
+                        success: Some(true),
+                        ..Default::default()
+                    },
+                };
+                let turn_context = self.new_default_turn().await;
+                self.record_conversation_items(&turn_context, &[response_item])
+                    .await;
+            }
         }
     }
 
@@ -1686,7 +1670,7 @@ impl Session {
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.cancel_pending_user_input(sub_id)
+                    ts.remove_pending_user_input(sub_id)
                 }
                 None => None,
             }
@@ -3985,18 +3969,11 @@ mod tests {
     use crate::config::test_config;
     use crate::exec::ExecToolCallOutput;
     use crate::function_tool::FunctionCallError;
-    use crate::session_prefix::TURN_ABORTED_OPEN_TAG;
     use crate::shell::default_user_shell;
     use crate::tools::format_exec_output_str;
 
     use codex_protocol::ThreadId;
     use codex_protocol::models::FunctionCallOutputPayload;
-    use codex_protocol::models::ResponseInputItem;
-    use codex_protocol::request_user_input::INTERRUPTED_ANSWER_ID_BASE;
-    use codex_protocol::request_user_input::INTERRUPTED_ANSWER_TEXT;
-    use codex_protocol::request_user_input::RequestUserInputAnswer;
-    use codex_protocol::request_user_input::RequestUserInputQuestion;
-    use codex_protocol::request_user_input::RequestUserInputResponse;
 
     use crate::protocol::CompactedItem;
     use crate::protocol::CreditsSnapshot;
@@ -4022,7 +3999,6 @@ mod tests {
     use codex_app_server_protocol::AuthMode;
     use codex_protocol::models::ContentItem;
     use codex_protocol::models::ResponseItem;
-    use std::collections::HashMap;
     use std::path::Path;
     use std::time::Duration;
     use tokio::time::sleep;
