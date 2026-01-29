@@ -990,39 +990,19 @@ impl HasLegacyEvent for ItemCompletedEvent {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase")]
-pub enum AgentMessageDeltaSegment {
-    #[default]
-    Normal,
-    ProposedPlanStart,
-    ProposedPlanDelta,
-    ProposedPlanEnd,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct AgentMessageContentDeltaEvent {
     pub thread_id: String,
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
-    #[serde(default)]
-    pub segment: AgentMessageDeltaSegment,
 }
 
 impl HasLegacyEvent for AgentMessageContentDeltaEvent {
     fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
-        match self.segment {
-            AgentMessageDeltaSegment::Normal => {
-                vec![EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
-                    delta: self.delta.clone(),
-                })]
-            }
-            AgentMessageDeltaSegment::ProposedPlanStart
-            | AgentMessageDeltaSegment::ProposedPlanDelta
-            | AgentMessageDeltaSegment::ProposedPlanEnd => Vec::new(),
-        }
+        vec![EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+            delta: self.delta.clone(),
+        })]
     }
 }
 

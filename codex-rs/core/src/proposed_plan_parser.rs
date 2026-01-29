@@ -1,11 +1,17 @@
-use codex_protocol::protocol::AgentMessageDeltaSegment;
-
 const OPEN_TAG: &str = "<proposed_plan>";
 const CLOSE_TAG: &str = "</proposed_plan>";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProposedPlanSegment {
+    Normal,
+    ProposedPlanStart,
+    ProposedPlanDelta,
+    ProposedPlanEnd,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ParsedAgentDelta {
-    pub(crate) segment: AgentMessageDeltaSegment,
+    pub(crate) segment: ProposedPlanSegment,
     pub(crate) delta: String,
 }
 
@@ -73,7 +79,7 @@ impl ProposedPlanParser {
         if self.in_plan {
             push_segment(
                 &mut segments,
-                AgentMessageDeltaSegment::ProposedPlanEnd,
+                ProposedPlanSegment::ProposedPlanEnd,
                 String::new(),
             );
             self.in_plan = false;
@@ -91,7 +97,7 @@ impl ProposedPlanParser {
             if !self.in_plan {
                 push_segment(
                     segments,
-                    AgentMessageDeltaSegment::ProposedPlanStart,
+                    ProposedPlanSegment::ProposedPlanStart,
                     String::new(),
                 );
                 self.in_plan = true;
@@ -104,7 +110,7 @@ impl ProposedPlanParser {
             if self.in_plan {
                 push_segment(
                     segments,
-                    AgentMessageDeltaSegment::ProposedPlanEnd,
+                    ProposedPlanSegment::ProposedPlanEnd,
                     String::new(),
                 );
                 self.in_plan = false;
@@ -119,9 +125,9 @@ impl ProposedPlanParser {
 
     fn push_text(&self, text: String, segments: &mut Vec<ParsedAgentDelta>) {
         let segment = if self.in_plan {
-            AgentMessageDeltaSegment::ProposedPlanDelta
+            ProposedPlanSegment::ProposedPlanDelta
         } else {
-            AgentMessageDeltaSegment::Normal
+            ProposedPlanSegment::Normal
         };
         push_segment(segments, segment, text);
     }
@@ -131,15 +137,11 @@ fn is_tag_prefix(slug: &str) -> bool {
     OPEN_TAG.starts_with(slug) || CLOSE_TAG.starts_with(slug)
 }
 
-fn push_segment(
-    segments: &mut Vec<ParsedAgentDelta>,
-    segment: AgentMessageDeltaSegment,
-    delta: String,
-) {
+fn push_segment(segments: &mut Vec<ParsedAgentDelta>, segment: ProposedPlanSegment, delta: String) {
     if delta.is_empty()
         && matches!(
             segment,
-            AgentMessageDeltaSegment::Normal | AgentMessageDeltaSegment::ProposedPlanDelta
+            ProposedPlanSegment::Normal | ProposedPlanSegment::ProposedPlanDelta
         )
     {
         return;
@@ -148,7 +150,7 @@ fn push_segment(
         && last.segment == segment
         && matches!(
             segment,
-            AgentMessageDeltaSegment::Normal | AgentMessageDeltaSegment::ProposedPlanDelta
+            ProposedPlanSegment::Normal | ProposedPlanSegment::ProposedPlanDelta
         )
     {
         last.delta.push_str(&delta);
@@ -161,7 +163,7 @@ pub(crate) fn strip_proposed_plan_blocks(text: &str) -> String {
     let mut parser = ProposedPlanParser::new();
     let mut out = String::new();
     for segment in parser.parse(text).into_iter().chain(parser.finish()) {
-        if matches!(segment.segment, AgentMessageDeltaSegment::Normal) {
+        if matches!(segment.segment, ProposedPlanSegment::Normal) {
             out.push_str(&segment.delta);
         }
     }
@@ -172,8 +174,8 @@ pub(crate) fn strip_proposed_plan_blocks(text: &str) -> String {
 mod tests {
     use super::ParsedAgentDelta;
     use super::ProposedPlanParser;
+    use super::ProposedPlanSegment;
     use super::strip_proposed_plan_blocks;
-    use codex_protocol::protocol::AgentMessageDeltaSegment;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -194,23 +196,23 @@ mod tests {
             segments,
             vec![
                 ParsedAgentDelta {
-                    segment: AgentMessageDeltaSegment::Normal,
+                    segment: ProposedPlanSegment::Normal,
                     delta: "Intro text\n".to_string(),
                 },
                 ParsedAgentDelta {
-                    segment: AgentMessageDeltaSegment::ProposedPlanStart,
+                    segment: ProposedPlanSegment::ProposedPlanStart,
                     delta: String::new(),
                 },
                 ParsedAgentDelta {
-                    segment: AgentMessageDeltaSegment::ProposedPlanDelta,
+                    segment: ProposedPlanSegment::ProposedPlanDelta,
                     delta: "- step 1\n".to_string(),
                 },
                 ParsedAgentDelta {
-                    segment: AgentMessageDeltaSegment::ProposedPlanEnd,
+                    segment: ProposedPlanSegment::ProposedPlanEnd,
                     delta: String::new(),
                 },
                 ParsedAgentDelta {
-                    segment: AgentMessageDeltaSegment::Normal,
+                    segment: ProposedPlanSegment::Normal,
                     delta: "Outro".to_string(),
                 },
             ]
@@ -226,7 +228,7 @@ mod tests {
         assert_eq!(
             segments,
             vec![ParsedAgentDelta {
-                segment: AgentMessageDeltaSegment::Normal,
+                segment: ProposedPlanSegment::Normal,
                 delta: "  <proposed_plan> extra\n".to_string(),
             }]
         );
@@ -242,15 +244,15 @@ mod tests {
             segments,
             vec![
                 ParsedAgentDelta {
-                    segment: AgentMessageDeltaSegment::ProposedPlanStart,
+                    segment: ProposedPlanSegment::ProposedPlanStart,
                     delta: String::new(),
                 },
                 ParsedAgentDelta {
-                    segment: AgentMessageDeltaSegment::ProposedPlanDelta,
+                    segment: ProposedPlanSegment::ProposedPlanDelta,
                     delta: "- step 1\n".to_string(),
                 },
                 ParsedAgentDelta {
-                    segment: AgentMessageDeltaSegment::ProposedPlanEnd,
+                    segment: ProposedPlanSegment::ProposedPlanEnd,
                     delta: String::new(),
                 },
             ]

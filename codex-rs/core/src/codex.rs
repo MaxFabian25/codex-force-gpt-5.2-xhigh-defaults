@@ -128,8 +128,8 @@ use crate::model_provider_info::CHAT_WIRE_API_DEPRECATION_SUMMARY;
 use crate::project_doc::get_user_instructions;
 use crate::proposed_plan_parser::ParsedAgentDelta;
 use crate::proposed_plan_parser::ProposedPlanParser;
+use crate::proposed_plan_parser::ProposedPlanSegment;
 use crate::protocol::AgentMessageContentDeltaEvent;
-use crate::protocol::AgentMessageDeltaSegment;
 use crate::protocol::AgentReasoningSectionBreakEvent;
 use crate::protocol::ApplyPatchApprovalRequestEvent;
 use crate::protocol::AskForApproval;
@@ -3693,7 +3693,7 @@ async fn handle_plan_segments(
 ) {
     for segment in segments {
         match segment.segment {
-            AgentMessageDeltaSegment::Normal => {
+            ProposedPlanSegment::Normal => {
                 if !segment.delta.is_empty() {
                     maybe_emit_pending_agent_message_start(
                         sess,
@@ -3710,13 +3710,12 @@ async fn handle_plan_segments(
                         turn_id: turn_context.sub_id.clone(),
                         item_id: item_id.to_string(),
                         delta: segment.delta,
-                        segment: AgentMessageDeltaSegment::Normal,
                     };
                     sess.send_event(turn_context, EventMsg::AgentMessageContentDelta(event))
                         .await;
                 }
             }
-            AgentMessageDeltaSegment::ProposedPlanStart => {
+            ProposedPlanSegment::ProposedPlanStart => {
                 if let Some(state) = plan_item_state.as_mut()
                     && !state.completed
                 {
@@ -3724,7 +3723,7 @@ async fn handle_plan_segments(
                     state.start(sess, turn_context).await;
                 }
             }
-            AgentMessageDeltaSegment::ProposedPlanDelta => {
+            ProposedPlanSegment::ProposedPlanDelta => {
                 if let Some(state) = plan_item_state.as_mut()
                     && !state.completed
                 {
@@ -3734,7 +3733,7 @@ async fn handle_plan_segments(
                     state.push_delta(sess, turn_context, &segment.delta).await;
                 }
             }
-            AgentMessageDeltaSegment::ProposedPlanEnd => {
+            ProposedPlanSegment::ProposedPlanEnd => {
                 if let Some(state) = plan_item_state.as_mut() {
                     state.complete(sess, turn_context).await;
                 }
@@ -4048,7 +4047,6 @@ async fn try_run_sampling_request(
                             turn_id: turn_context.sub_id.clone(),
                             item_id,
                             delta,
-                            segment: AgentMessageDeltaSegment::Normal,
                         };
                         sess.send_event(&turn_context, EventMsg::AgentMessageContentDelta(event))
                             .await;
