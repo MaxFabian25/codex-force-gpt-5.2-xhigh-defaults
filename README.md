@@ -32,8 +32,8 @@ If you want the **official** Codex CLI distribution, install it from npm or Home
 If you specifically want the **fork behavior**, build and run from source:
 
 ```shell
-git clone https://github.com/MaxFabian25/codex-gpt-5.2-defaults.git
-cd codex-gpt-5.2-defaults/codex-rs
+git clone https://github.com/MaxFabian25/codex-force-gpt-5.2-xhigh-defaults.git
+cd codex-force-gpt-5.2-xhigh-defaults/codex-rs
 cargo build -p codex-cli --release
 ./target/release/codex
 ```
