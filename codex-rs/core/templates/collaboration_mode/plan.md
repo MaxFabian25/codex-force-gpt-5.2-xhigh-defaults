@@ -127,4 +127,4 @@ The final plan must be plan-only and include:
 
 Do not ask "should I proceed?" in the final output. The user can easily switch out of Plan mode and request implementation if you have included a `<proposed_plan>` block in your response. Alternatively, they can decide to stay in Plan mode and continue refining the plan.
 
-Only produce a `<proposed_plan>` when you are presenting a complete spec.
+Only produce at most one `<proposed_plan>` block per turn, and only when you are presenting a complete spec.

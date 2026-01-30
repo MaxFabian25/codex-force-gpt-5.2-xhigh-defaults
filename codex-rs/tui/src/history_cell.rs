@@ -1745,10 +1745,11 @@ pub(crate) struct ProposedPlanCell {
 
 impl HistoryCell for ProposedPlanCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let mut lines: Vec<Line<'static>> = vec![
-            Line::from(" "),
-            vec!["• ".dim(), "Proposed Plan".bold()].into(),
-        ];
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        lines.push(vec!["• ".dim(), "Proposed Plan".bold()].into());
+        lines.push(Line::from(" "));
+
+        let mut plan_lines: Vec<Line<'static>> = vec![Line::from(" ")];
         let plan_style = proposed_plan_style();
         let wrap_width = width.saturating_sub(4).max(1) as usize;
         let mut body: Vec<Line<'static>> = Vec::new();
@@ -1756,11 +1757,11 @@ impl HistoryCell for ProposedPlanCell {
         if body.is_empty() {
             body.push(Line::from("(empty)".dim().italic()));
         }
-        lines.extend(prefix_lines(body, "  ".into(), "  ".into()));
+        plan_lines.extend(prefix_lines(body, "  ".into(), "  ".into()));
+        plan_lines.push(Line::from(" "));
+
+        lines.extend(plan_lines.into_iter().map(|line| line.style(plan_style)));
         lines
-            .into_iter()
-            .map(|line| line.style(plan_style))
-            .collect()
     }
 }
 

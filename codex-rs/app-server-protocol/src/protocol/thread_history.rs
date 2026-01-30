@@ -1,4 +1,3 @@
-use crate::protocol::v2::ItemCompletedNotification;
 use crate::protocol::v2::ThreadItem;
 use crate::protocol::v2::Turn;
 use crate::protocol::v2::TurnError;
@@ -7,6 +6,7 @@ use crate::protocol::v2::UserInput;
 use codex_protocol::protocol::AgentReasoningEvent;
 use codex_protocol::protocol::AgentReasoningRawContentEvent;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ThreadRolledBackEvent;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::UserMessageEvent;
@@ -127,7 +127,7 @@ impl ThreadHistoryBuilder {
         });
     }
 
-    fn handle_item_completed(&mut self, payload: &ItemCompletedNotification) {
+    fn handle_item_completed(&mut self, payload: &ItemCompletedEvent) {
         if let codex_protocol::items::TurnItem::Plan(plan) = &payload.item {
             if plan.text.is_empty() {
                 return;
