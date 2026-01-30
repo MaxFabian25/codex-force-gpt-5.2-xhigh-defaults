@@ -1,3 +1,45 @@
+# Codex CLI — `gpt-5.2` defaults fork
+
+This is an **unofficial fork** of OpenAI's Codex CLI (`openai/codex`).
+
+The goal of this fork is simple: **make Codex default to `gpt-5.2` (not `gpt-5.2-codex`) everywhere**, with:
+
+- `model_reasoning_effort = xhigh`
+- `model_verbosity = high`
+- `model_reasoning_summary = detailed`
+
+This applies to:
+
+- The main/default agent
+- Spawned agents (orchestrator, worker, **explorer**)
+- Built-in collaboration modes (Plan / Code / Pair Programming / Execute)
+
+## What's different from upstream?
+
+Compared to `openai/codex`, this fork intentionally makes only a small set of opinionated default changes:
+
+- **Default model preset** is `gpt-5.2` (and defaults to `reasoning_effort = xhigh`).
+- **Sub-agent model overrides** (orchestrator/worker/explorer) are pinned to `gpt-5.2` with `xhigh/high/detailed`.
+- **Collaboration mode presets** are pinned to `gpt-5.2` with `reasoning_effort = xhigh`.
+- **Default agent thread limit** is bumped to `8` (`DEFAULT_AGENT_MAX_THREADS = Some(8)`).
+
+Nothing prevents you from selecting other models (including `gpt-5.2-codex`) via configuration or the model picker; the point here is purely to change the *defaults*.
+
+## Using this fork
+
+If you want the **official** Codex CLI distribution, install it from npm or Homebrew as usual (see below).
+
+If you specifically want the **fork behavior**, build and run from source:
+
+```shell
+git clone https://github.com/MaxFabian25/codex-gpt-5.2-defaults.git
+cd codex-gpt-5.2-defaults/codex-rs
+cargo build -p codex-cli --release
+./target/release/codex
+```
+
+---
+
 <p align="center"><code>npm i -g @openai/codex</code><br />or <code>brew install --cask codex</code></p>
 <p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
 <p align="center">
