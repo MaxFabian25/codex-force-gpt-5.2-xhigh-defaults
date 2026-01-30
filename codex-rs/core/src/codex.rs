@@ -3759,9 +3759,47 @@ async fn handle_plan_segments(
     }
 }
 
-fn assistant_message_text(item: &ResponseItem) -> Option<String> {
+/// Flush any buffered proposed-plan segments when the active assistant message ends.
+async fn flush_proposed_plan_segments(
+    sess: &Session,
+    turn_context: &TurnContext,
+    plan_item_state: &mut Option<PlanItemState>,
+    pending_agent_message_items: &mut HashMap<String, TurnItem>,
+    started_agent_message_items: &mut HashSet<String>,
+    parser: &mut ProposedPlanParser,
+    active_item: Option<&TurnItem>,
+) {
+    if let Some(active) = active_item
+        && matches!(active, TurnItem::AgentMessage(_))
+    {
+        let segments = parser.finish();
+        if segments.is_empty() {
+            return;
+        }
+        let item_id = active.id();
+        handle_plan_segments(
+            sess,
+            turn_context,
+            plan_item_state,
+            pending_agent_message_items,
+            started_agent_message_items,
+            &item_id,
+            segments,
+        )
+        .await;
+    }
+}
+
+/// Emit completion for plan items by parsing the finalized assistant message.
+async fn maybe_complete_plan_item_from_message(
+    sess: &Session,
+    turn_context: &TurnContext,
+    plan_item_state: &mut Option<PlanItemState>,
+    item: &ResponseItem,
+) {
     if let ResponseItem::Message { role, content, .. } = item
         && role == "assistant"
+        && let Some(state) = plan_item_state.as_mut()
     {
         let mut text = String::new();
         for entry in content {
@@ -3769,9 +3807,125 @@ fn assistant_message_text(item: &ResponseItem) -> Option<String> {
                 text.push_str(chunk);
             }
         }
-        return Some(text);
+        if let Some(plan_text) = extract_proposed_plan_text(&text) {
+            if !state.started {
+                state.start(sess, turn_context).await;
+            }
+            state
+                .complete_with_text(sess, turn_context, plan_text)
+                .await;
+        }
     }
-    None
+}
+
+/// Emit a completed agent message in plan mode, respecting deferred starts.
+async fn emit_plan_mode_agent_message(
+    sess: &Session,
+    turn_context: &TurnContext,
+    agent_message: codex_protocol::items::AgentMessageItem,
+    pending_agent_message_items: &mut HashMap<String, TurnItem>,
+    started_agent_message_items: &mut HashSet<String>,
+) {
+    let agent_message_id = agent_message.id.clone();
+    let text = agent_message_text(&agent_message);
+    if text.trim().is_empty() {
+        pending_agent_message_items.remove(&agent_message_id);
+        started_agent_message_items.remove(&agent_message_id);
+        return;
+    }
+
+    maybe_emit_pending_agent_message_start(
+        sess,
+        turn_context,
+        pending_agent_message_items,
+        started_agent_message_items,
+        &agent_message_id,
+    )
+    .await;
+
+    if !started_agent_message_items.contains(&agent_message_id) {
+        let start_item = pending_agent_message_items
+            .remove(&agent_message_id)
+            .unwrap_or_else(|| {
+                TurnItem::AgentMessage(codex_protocol::items::AgentMessageItem {
+                    id: agent_message_id.clone(),
+                    content: Vec::new(),
+                })
+            });
+        sess.emit_turn_item_started(turn_context, &start_item).await;
+        started_agent_message_items.insert(agent_message_id.clone());
+    }
+
+    sess.emit_turn_item_completed(turn_context, TurnItem::AgentMessage(agent_message))
+        .await;
+    started_agent_message_items.remove(&agent_message_id);
+}
+
+/// Emit completion for a plan-mode turn item, handling agent messages specially.
+async fn emit_plan_mode_turn_item_completion(
+    sess: &Session,
+    turn_context: &TurnContext,
+    turn_item: TurnItem,
+    previously_active_item: Option<&TurnItem>,
+    pending_agent_message_items: &mut HashMap<String, TurnItem>,
+    started_agent_message_items: &mut HashSet<String>,
+) {
+    match turn_item {
+        TurnItem::AgentMessage(agent_message) => {
+            emit_plan_mode_agent_message(
+                sess,
+                turn_context,
+                agent_message,
+                pending_agent_message_items,
+                started_agent_message_items,
+            )
+            .await;
+        }
+        _ => {
+            if previously_active_item.is_none() {
+                sess.emit_turn_item_started(turn_context, &turn_item).await;
+            }
+            sess.emit_turn_item_completed(turn_context, turn_item).await;
+        }
+    }
+}
+
+/// Handle a completed assistant response item in plan mode, returning true if handled.
+async fn handle_plan_mode_assistant_item_done(
+    sess: &Session,
+    turn_context: &TurnContext,
+    item: &ResponseItem,
+    plan_item_state: &mut Option<PlanItemState>,
+    pending_agent_message_items: &mut HashMap<String, TurnItem>,
+    started_agent_message_items: &mut HashSet<String>,
+    previously_active_item: Option<&TurnItem>,
+    last_agent_message: &mut Option<String>,
+) -> bool {
+    if let ResponseItem::Message { role, .. } = item
+        && role == "assistant"
+    {
+        maybe_complete_plan_item_from_message(sess, turn_context, plan_item_state, item).await;
+
+        if let Some(turn_item) = handle_non_tool_response_item(item, true).await {
+            emit_plan_mode_turn_item_completion(
+                sess,
+                turn_context,
+                turn_item,
+                previously_active_item,
+                pending_agent_message_items,
+                started_agent_message_items,
+            )
+            .await;
+        }
+
+        sess.record_conversation_items(turn_context, std::slice::from_ref(item))
+            .await;
+        if let Some(agent_message) = last_assistant_message_from_item(item, true) {
+            *last_agent_message = Some(agent_message);
+        }
+        return true;
+    }
+    false
 }
 
 async fn drain_in_flight(
@@ -3903,93 +4057,32 @@ async fn try_run_sampling_request(
             ResponseEvent::Created => {}
             ResponseEvent::OutputItemDone(item) => {
                 let previously_active_item = active_item.take();
-                if let Some(parser) = proposed_plan_parser.as_mut()
-                    && let Some(active) = previously_active_item.as_ref()
-                    && matches!(active, TurnItem::AgentMessage(_))
-                {
-                    let segments = parser.finish();
-                    if !segments.is_empty() {
-                        let item_id = active.id();
-                        handle_plan_segments(
-                            &sess,
-                            &turn_context,
-                            &mut plan_item_state,
-                            &mut pending_agent_message_items,
-                            &mut started_agent_message_items,
-                            &item_id,
-                            segments,
-                        )
-                        .await;
-                    }
+                if let Some(parser) = proposed_plan_parser.as_mut() {
+                    flush_proposed_plan_segments(
+                        &sess,
+                        &turn_context,
+                        &mut plan_item_state,
+                        &mut pending_agent_message_items,
+                        &mut started_agent_message_items,
+                        parser,
+                        previously_active_item.as_ref(),
+                    )
+                    .await;
                 }
 
                 if plan_mode
-                    && let ResponseItem::Message { role, .. } = &item
-                    && role == "assistant"
+                    && handle_plan_mode_assistant_item_done(
+                        &sess,
+                        &turn_context,
+                        &item,
+                        &mut plan_item_state,
+                        &mut pending_agent_message_items,
+                        &mut started_agent_message_items,
+                        previously_active_item.as_ref(),
+                        &mut last_agent_message,
+                    )
+                    .await
                 {
-                    if let Some(plan_text) = assistant_message_text(&item)
-                        .as_deref()
-                        .and_then(extract_proposed_plan_text)
-                        && let Some(state) = plan_item_state.as_mut()
-                    {
-                        if !state.started {
-                            state.start(&sess, &turn_context).await;
-                        }
-                        state
-                            .complete_with_text(&sess, &turn_context, plan_text)
-                            .await;
-                    }
-
-                    if let Some(turn_item) = handle_non_tool_response_item(&item, plan_mode).await {
-                        if let TurnItem::AgentMessage(agent_message) = &turn_item {
-                            let agent_message_id = agent_message.id.clone();
-                            let text = agent_message_text(agent_message);
-                            if !text.trim().is_empty() {
-                                maybe_emit_pending_agent_message_start(
-                                    &sess,
-                                    &turn_context,
-                                    &mut pending_agent_message_items,
-                                    &mut started_agent_message_items,
-                                    &agent_message_id,
-                                )
-                                .await;
-                                if !started_agent_message_items.contains(&agent_message_id) {
-                                    let start_item = pending_agent_message_items
-                                        .remove(&agent_message_id)
-                                        .unwrap_or_else(|| {
-                                            TurnItem::AgentMessage(
-                                                codex_protocol::items::AgentMessageItem {
-                                                    id: agent_message_id.clone(),
-                                                    content: Vec::new(),
-                                                },
-                                            )
-                                        });
-                                    sess.emit_turn_item_started(&turn_context, &start_item)
-                                        .await;
-                                    started_agent_message_items.insert(agent_message_id.clone());
-                                }
-                                sess.emit_turn_item_completed(&turn_context, turn_item.clone())
-                                    .await;
-                                started_agent_message_items.remove(&agent_message_id);
-                            } else {
-                                pending_agent_message_items.remove(&agent_message_id);
-                                started_agent_message_items.remove(&agent_message_id);
-                            }
-                        } else {
-                            if previously_active_item.is_none() {
-                                sess.emit_turn_item_started(&turn_context, &turn_item).await;
-                            }
-                            sess.emit_turn_item_completed(&turn_context, turn_item)
-                                .await;
-                        }
-                    }
-
-                    sess.record_conversation_items(&turn_context, std::slice::from_ref(&item))
-                        .await;
-                    if let Some(agent_message) = last_assistant_message_from_item(&item, plan_mode)
-                    {
-                        last_agent_message = Some(agent_message);
-                    }
                     continue;
                 }
 
@@ -4042,24 +4135,17 @@ async fn try_run_sampling_request(
                 response_id: _,
                 token_usage,
             } => {
-                if let Some(parser) = proposed_plan_parser.as_mut()
-                    && let Some(active) = active_item.as_ref()
-                    && matches!(active, TurnItem::AgentMessage(_))
-                {
-                    let segments = parser.finish();
-                    if !segments.is_empty() {
-                        let item_id = active.id();
-                        handle_plan_segments(
-                            &sess,
-                            &turn_context,
-                            &mut plan_item_state,
-                            &mut pending_agent_message_items,
-                            &mut started_agent_message_items,
-                            &item_id,
-                            segments,
-                        )
-                        .await;
-                    }
+                if let Some(parser) = proposed_plan_parser.as_mut() {
+                    flush_proposed_plan_segments(
+                        &sess,
+                        &turn_context,
+                        &mut plan_item_state,
+                        &mut pending_agent_message_items,
+                        &mut started_agent_message_items,
+                        parser,
+                        active_item.as_ref(),
+                    )
+                    .await;
                 }
                 if let Some(parser) = reasoning_summary_plan_parser.as_mut()
                     && let (Some(item_id), Some(summary_index)) = (
