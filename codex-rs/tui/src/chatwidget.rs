@@ -72,6 +72,7 @@ use codex_core::protocol::McpToolCallEndEvent;
 use codex_core::protocol::Op;
 use codex_core::protocol::PatchApplyBeginEvent;
 use codex_core::protocol::RateLimitSnapshot;
+use codex_core::protocol::RawResponseItemEvent;
 use codex_core::protocol::ReviewRequest;
 use codex_core::protocol::ReviewTarget;
 use codex_core::protocol::SkillMetadata as ProtocolSkillMetadata;
@@ -103,10 +104,14 @@ use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::Settings;
 #[cfg(target_os = "windows")]
 use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::parse_command::ParsedCommand;
+use codex_protocol::request_user_input::INTERRUPTED_ANSWER_ID_BASE;
+use codex_protocol::request_user_input::INTERRUPTED_ANSWER_TEXT;
 use codex_protocol::request_user_input::RequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputEvent;
+use codex_protocol::request_user_input::RequestUserInputQuestion;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_protocol::user_input::TextElement;
 use codex_protocol::user_input::UserInput;
@@ -371,6 +376,26 @@ pub(crate) fn get_limits_duration(windows_minutes: i64) -> String {
     }
 }
 
+fn split_request_user_input_answers(
+    mut answers: HashMap<String, RequestUserInputAnswer>,
+) -> (HashMap<String, RequestUserInputAnswer>, bool) {
+    let interrupted_key = answers
+        .iter()
+        .find(|(key, answer)| {
+            key.starts_with(INTERRUPTED_ANSWER_ID_BASE)
+                && answer
+                    .answers
+                    .iter()
+                    .any(|value| value == INTERRUPTED_ANSWER_TEXT)
+        })
+        .map(|(key, _)| key.clone());
+    let interrupted = interrupted_key.is_some();
+    if let Some(key) = interrupted_key {
+        answers.remove(&key);
+    }
+    (answers, interrupted)
+}
+
 /// Common initialization parameters shared by all `ChatWidget` constructors.
 pub(crate) struct ChatWidgetInit {
     pub(crate) config: Config,
@@ -533,6 +558,8 @@ pub(crate) struct ChatWidget {
     queued_user_messages: VecDeque<UserMessage>,
     // Partial request_user_input answers to send before the next user turn.
     pending_request_user_input_answers: VecDeque<PendingRequestUserInputAnswers>,
+    // Cached request_user_input questions for replayed sessions, keyed by call_id.
+    request_user_input_questions: HashMap<String, Vec<RequestUserInputQuestion>>,
     // Pending notification to show when unfocused on next Draw
     pending_notification: Option<Notification>,
     /// When `Some`, the user has pressed a quit shortcut and the second press
@@ -795,6 +822,7 @@ impl ChatWidget {
         self.set_skills(None);
         self.bottom_pane.set_connectors_snapshot(None);
         self.clear_pending_request_user_input_answers();
+        self.request_user_input_questions.clear();
         self.thread_id = Some(event.session_id);
         self.forked_from = event.forked_from_id;
         self.current_rollout_path = event.rollout_path.clone();
@@ -1421,6 +1449,35 @@ impl ChatWidget {
             |q| q.push_user_input(ev),
             |s| s.handle_request_user_input_now(ev2),
         );
+    }
+
+    fn on_request_user_input_replay(&mut self, ev: RequestUserInputEvent) {
+        self.request_user_input_questions
+            .insert(ev.call_id, ev.questions);
+    }
+
+    fn on_raw_response_item_replay(&mut self, ev: RawResponseItemEvent) {
+        let ResponseItem::FunctionCallOutput { call_id, output } = ev.item else {
+            return;
+        };
+        let Some(questions) = self.request_user_input_questions.remove(&call_id) else {
+            return;
+        };
+        let response: RequestUserInputResponse = match serde_json::from_str(&output.content) {
+            Ok(response) => response,
+            Err(err) => {
+                tracing::warn!(
+                    "failed to parse request_user_input response for call_id {call_id}: {err}"
+                );
+                return;
+            }
+        };
+        let (answers, interrupted) = split_request_user_input_answers(response.answers);
+        self.add_to_history(history_cell::new_request_user_input_result(
+            questions,
+            answers,
+            interrupted,
+        ));
     }
 
     fn on_exec_command_begin(&mut self, ev: ExecCommandBeginEvent) {
@@ -2146,6 +2203,7 @@ impl ChatWidget {
             forked_from: None,
             queued_user_messages: VecDeque::new(),
             pending_request_user_input_answers: VecDeque::new(),
+            request_user_input_questions: HashMap::new(),
             show_welcome_banner: is_first_run,
             suppress_session_configured_redraw: false,
             pending_notification: None,
@@ -2288,6 +2346,7 @@ impl ChatWidget {
             saw_plan_update_this_turn: false,
             queued_user_messages: VecDeque::new(),
             pending_request_user_input_answers: VecDeque::new(),
+            request_user_input_questions: HashMap::new(),
             show_welcome_banner: is_first_run,
             suppress_session_configured_redraw: false,
             pending_notification: None,
@@ -2417,6 +2476,7 @@ impl ChatWidget {
             forked_from: None,
             queued_user_messages: VecDeque::new(),
             pending_request_user_input_answers: VecDeque::new(),
+            request_user_input_questions: HashMap::new(),
             show_welcome_banner: false,
             suppress_session_configured_redraw: true,
             pending_notification: None,
@@ -3253,7 +3313,11 @@ impl ChatWidget {
                 self.on_elicitation_request(ev);
             }
             EventMsg::RequestUserInput(ev) => {
-                self.on_request_user_input(ev);
+                if from_replay {
+                    self.on_request_user_input_replay(ev);
+                } else {
+                    self.on_request_user_input(ev);
+                }
             }
             EventMsg::ExecCommandBegin(ev) => self.on_exec_command_begin(ev),
             EventMsg::TerminalInteraction(delta) => self.on_terminal_interaction(delta),
@@ -3311,9 +3375,14 @@ impl ChatWidget {
             EventMsg::CollabCloseEnd(ev) => self.on_collab_event(collab::close_end(ev)),
             EventMsg::ThreadRolledBack(_) => {
                 self.clear_pending_request_user_input_answers();
+                self.request_user_input_questions.clear();
             }
-            EventMsg::RawResponseItem(_)
-            | EventMsg::ItemStarted(_)
+            EventMsg::RawResponseItem(ev) => {
+                if from_replay {
+                    self.on_raw_response_item_replay(ev);
+                }
+            }
+            EventMsg::ItemStarted(_)
             | EventMsg::ItemCompleted(_)
             | EventMsg::AgentMessageContentDelta(_)
             | EventMsg::ReasoningContentDelta(_)
