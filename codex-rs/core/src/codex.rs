@@ -3601,13 +3601,16 @@ struct SamplingRequestResult {
 /// This is intentionally not persisted or stored in session/state since it
 /// only exists while a response is actively streaming. The final plan text
 /// is extracted from the completed assistant message.
-struct PlanItemState {
+/// Tracks a single proposed plan item across a streaming response.
+struct ProposedPlanItemState {
     item_id: String,
     started: bool,
     completed: bool,
 }
 
-struct PlanModeState {
+/// Aggregated state used only while streaming a plan-mode response.
+/// Includes parsers, deferred agent message bookkeeping, and the plan item lifecycle.
+struct PlanModeStreamState {
     /// Parses assistant message deltas to split plan vs non-plan output.
     proposed_plan_parser: ProposedPlanParser,
     /// Filters plan tags/content out of reasoning summary deltas.
@@ -3619,7 +3622,7 @@ struct PlanModeState {
     /// Agent message items whose start notification has been emitted.
     started_agent_message_items: HashSet<String>,
     /// Tracks plan item lifecycle while streaming plan output.
-    plan_item_state: PlanItemState,
+    plan_item_state: ProposedPlanItemState,
     /// Last summary index seen in reasoning deltas (for tail flush).
     last_reasoning_summary_index: Option<i64>,
     /// Last content index seen in reasoning deltas (for tail flush).
@@ -3630,7 +3633,7 @@ struct PlanModeState {
     last_reasoning_raw_item_id: Option<String>,
 }
 
-impl PlanModeState {
+impl PlanModeStreamState {
     fn new(turn_id: &str) -> Self {
         Self {
             proposed_plan_parser: ProposedPlanParser::new(),
@@ -3638,7 +3641,7 @@ impl PlanModeState {
             reasoning_raw_plan_parser: ProposedPlanParser::new(),
             pending_agent_message_items: HashMap::new(),
             started_agent_message_items: HashSet::new(),
-            plan_item_state: PlanItemState::new(turn_id),
+            plan_item_state: ProposedPlanItemState::new(turn_id),
             last_reasoning_summary_index: None,
             last_reasoning_raw_index: None,
             last_reasoning_summary_item_id: None,
@@ -3647,7 +3650,7 @@ impl PlanModeState {
     }
 }
 
-impl PlanItemState {
+impl ProposedPlanItemState {
     fn new(turn_id: &str) -> Self {
         Self {
             item_id: format!("{turn_id}-plan"),
@@ -3709,7 +3712,7 @@ impl PlanItemState {
 async fn maybe_emit_pending_agent_message_start(
     sess: &Session,
     turn_context: &TurnContext,
-    state: &mut PlanModeState,
+    state: &mut PlanModeStreamState,
     item_id: &str,
 ) {
     if state.started_agent_message_items.contains(item_id) {
@@ -3749,7 +3752,7 @@ fn collect_plan_normal_text(segments: Vec<ProposedPlanSegment>) -> String {
 async fn handle_plan_segments(
     sess: &Session,
     turn_context: &TurnContext,
-    state: &mut PlanModeState,
+    state: &mut PlanModeStreamState,
     item_id: &str,
     segments: Vec<ProposedPlanSegment>,
 ) {
@@ -3795,7 +3798,7 @@ async fn handle_plan_segments(
 async fn flush_proposed_plan_segments(
     sess: &Session,
     turn_context: &TurnContext,
-    state: &mut PlanModeState,
+    state: &mut PlanModeStreamState,
     active_item: Option<&TurnItem>,
 ) {
     if let Some(active) = active_item
@@ -3814,7 +3817,7 @@ async fn flush_proposed_plan_segments(
 async fn maybe_complete_plan_item_from_message(
     sess: &Session,
     turn_context: &TurnContext,
-    state: &mut PlanModeState,
+    state: &mut PlanModeStreamState,
     item: &ResponseItem,
 ) {
     if let ResponseItem::Message { role, content, .. } = item
@@ -3843,7 +3846,7 @@ async fn emit_plan_mode_agent_message(
     sess: &Session,
     turn_context: &TurnContext,
     agent_message: codex_protocol::items::AgentMessageItem,
-    state: &mut PlanModeState,
+    state: &mut PlanModeStreamState,
 ) {
     let agent_message_id = agent_message.id.clone();
     let text = agent_message_text(&agent_message);
@@ -3885,7 +3888,7 @@ async fn emit_plan_mode_turn_item_completion(
     turn_context: &TurnContext,
     turn_item: TurnItem,
     previously_active_item: Option<&TurnItem>,
-    state: &mut PlanModeState,
+    state: &mut PlanModeStreamState,
 ) {
     match turn_item {
         TurnItem::AgentMessage(agent_message) => {
@@ -3905,7 +3908,7 @@ async fn handle_plan_mode_assistant_item_done(
     sess: &Session,
     turn_context: &TurnContext,
     item: &ResponseItem,
-    state: &mut PlanModeState,
+    state: &mut PlanModeStreamState,
     previously_active_item: Option<&TurnItem>,
     last_agent_message: &mut Option<String>,
 ) -> bool {
@@ -3938,7 +3941,7 @@ async fn handle_plan_mode_assistant_item_done(
 async fn flush_reasoning_plan_tails(
     sess: &Session,
     turn_context: &TurnContext,
-    state: &mut PlanModeState,
+    state: &mut PlanModeStreamState,
 ) {
     if let (Some(item_id), Some(summary_index)) = (
         state.last_reasoning_summary_item_id.as_ref(),
@@ -4058,7 +4061,7 @@ async fn try_run_sampling_request(
     let mut active_item: Option<TurnItem> = None;
     let mut should_emit_turn_diff = false;
     let plan_mode = turn_context.collaboration_mode_kind == ModeKind::Plan;
-    let mut plan_mode_state = plan_mode.then(|| PlanModeState::new(&turn_context.sub_id));
+    let mut plan_mode_state = plan_mode.then(|| PlanModeStreamState::new(&turn_context.sub_id));
     let receiving_span = trace_span!("receiving_stream");
     let outcome: CodexResult<SamplingRequestResult> = loop {
         let handle_responses = trace_span!(
