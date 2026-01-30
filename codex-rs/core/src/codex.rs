@@ -3607,6 +3607,36 @@ struct PlanItemState {
     completed: bool,
 }
 
+struct PlanModeState {
+    proposed_plan_parser: ProposedPlanParser,
+    reasoning_summary_plan_parser: ProposedPlanParser,
+    reasoning_raw_plan_parser: ProposedPlanParser,
+    pending_agent_message_items: HashMap<String, TurnItem>,
+    started_agent_message_items: HashSet<String>,
+    plan_item_state: PlanItemState,
+    last_reasoning_summary_index: Option<i64>,
+    last_reasoning_raw_index: Option<i64>,
+    last_reasoning_summary_item_id: Option<String>,
+    last_reasoning_raw_item_id: Option<String>,
+}
+
+impl PlanModeState {
+    fn new(turn_id: &str) -> Self {
+        Self {
+            proposed_plan_parser: ProposedPlanParser::new(),
+            reasoning_summary_plan_parser: ProposedPlanParser::new(),
+            reasoning_raw_plan_parser: ProposedPlanParser::new(),
+            pending_agent_message_items: HashMap::new(),
+            started_agent_message_items: HashSet::new(),
+            plan_item_state: PlanItemState::new(turn_id),
+            last_reasoning_summary_index: None,
+            last_reasoning_raw_index: None,
+            last_reasoning_summary_item_id: None,
+            last_reasoning_raw_item_id: None,
+        }
+    }
+}
+
 impl PlanItemState {
     fn new(turn_id: &str) -> Self {
         Self {
@@ -3669,16 +3699,17 @@ impl PlanItemState {
 async fn maybe_emit_pending_agent_message_start(
     sess: &Session,
     turn_context: &TurnContext,
-    pending: &mut HashMap<String, TurnItem>,
-    started: &mut HashSet<String>,
+    state: &mut PlanModeState,
     item_id: &str,
 ) {
-    if started.contains(item_id) {
+    if state.started_agent_message_items.contains(item_id) {
         return;
     }
-    if let Some(item) = pending.remove(item_id) {
+    if let Some(item) = state.pending_agent_message_items.remove(item_id) {
         sess.emit_turn_item_started(turn_context, &item).await;
-        started.insert(item_id.to_string());
+        state
+            .started_agent_message_items
+            .insert(item_id.to_string());
     }
 }
 
@@ -3708,9 +3739,7 @@ fn collect_plan_normal_text(segments: Vec<ProposedPlanSegment>) -> String {
 async fn handle_plan_segments(
     sess: &Session,
     turn_context: &TurnContext,
-    plan_item_state: &mut Option<PlanItemState>,
-    pending_agent_message_items: &mut HashMap<String, TurnItem>,
-    started_agent_message_items: &mut HashSet<String>,
+    state: &mut PlanModeState,
     item_id: &str,
     segments: Vec<ProposedPlanSegment>,
 ) {
@@ -3718,14 +3747,8 @@ async fn handle_plan_segments(
         match segment {
             ProposedPlanSegment::Normal(delta) => {
                 if !delta.is_empty() {
-                    maybe_emit_pending_agent_message_start(
-                        sess,
-                        turn_context,
-                        pending_agent_message_items,
-                        started_agent_message_items,
-                        item_id,
-                    )
-                    .await;
+                    maybe_emit_pending_agent_message_start(sess, turn_context, state, item_id)
+                        .await;
 
                     let event = AgentMessageContentDeltaEvent {
                         thread_id: sess.conversation_id.to_string(),
@@ -3738,20 +3761,19 @@ async fn handle_plan_segments(
                 }
             }
             ProposedPlanSegment::ProposedPlanStart => {
-                if let Some(state) = plan_item_state.as_mut()
-                    && !state.completed
-                {
-                    state.start(sess, turn_context).await;
+                if !state.plan_item_state.completed {
+                    state.plan_item_state.start(sess, turn_context).await;
                 }
             }
             ProposedPlanSegment::ProposedPlanDelta(delta) => {
-                if let Some(state) = plan_item_state.as_mut()
-                    && !state.completed
-                {
-                    if !state.started {
-                        state.start(sess, turn_context).await;
+                if !state.plan_item_state.completed {
+                    if !state.plan_item_state.started {
+                        state.plan_item_state.start(sess, turn_context).await;
                     }
-                    state.push_delta(sess, turn_context, &delta).await;
+                    state
+                        .plan_item_state
+                        .push_delta(sess, turn_context, &delta)
+                        .await;
                 }
             }
             ProposedPlanSegment::ProposedPlanEnd => {}
@@ -3763,30 +3785,18 @@ async fn handle_plan_segments(
 async fn flush_proposed_plan_segments(
     sess: &Session,
     turn_context: &TurnContext,
-    plan_item_state: &mut Option<PlanItemState>,
-    pending_agent_message_items: &mut HashMap<String, TurnItem>,
-    started_agent_message_items: &mut HashSet<String>,
-    parser: &mut ProposedPlanParser,
+    state: &mut PlanModeState,
     active_item: Option<&TurnItem>,
 ) {
     if let Some(active) = active_item
         && matches!(active, TurnItem::AgentMessage(_))
     {
-        let segments = parser.finish();
+        let segments = state.proposed_plan_parser.finish();
         if segments.is_empty() {
             return;
         }
         let item_id = active.id();
-        handle_plan_segments(
-            sess,
-            turn_context,
-            plan_item_state,
-            pending_agent_message_items,
-            started_agent_message_items,
-            &item_id,
-            segments,
-        )
-        .await;
+        handle_plan_segments(sess, turn_context, state, &item_id, segments).await;
     }
 }
 
@@ -3794,12 +3804,11 @@ async fn flush_proposed_plan_segments(
 async fn maybe_complete_plan_item_from_message(
     sess: &Session,
     turn_context: &TurnContext,
-    plan_item_state: &mut Option<PlanItemState>,
+    state: &mut PlanModeState,
     item: &ResponseItem,
 ) {
     if let ResponseItem::Message { role, content, .. } = item
         && role == "assistant"
-        && let Some(state) = plan_item_state.as_mut()
     {
         let mut text = String::new();
         for entry in content {
@@ -3808,10 +3817,11 @@ async fn maybe_complete_plan_item_from_message(
             }
         }
         if let Some(plan_text) = extract_proposed_plan_text(&text) {
-            if !state.started {
-                state.start(sess, turn_context).await;
+            if !state.plan_item_state.started {
+                state.plan_item_state.start(sess, turn_context).await;
             }
             state
+                .plan_item_state
                 .complete_with_text(sess, turn_context, plan_text)
                 .await;
         }
@@ -3823,28 +3833,24 @@ async fn emit_plan_mode_agent_message(
     sess: &Session,
     turn_context: &TurnContext,
     agent_message: codex_protocol::items::AgentMessageItem,
-    pending_agent_message_items: &mut HashMap<String, TurnItem>,
-    started_agent_message_items: &mut HashSet<String>,
+    state: &mut PlanModeState,
 ) {
     let agent_message_id = agent_message.id.clone();
     let text = agent_message_text(&agent_message);
     if text.trim().is_empty() {
-        pending_agent_message_items.remove(&agent_message_id);
-        started_agent_message_items.remove(&agent_message_id);
+        state.pending_agent_message_items.remove(&agent_message_id);
+        state.started_agent_message_items.remove(&agent_message_id);
         return;
     }
 
-    maybe_emit_pending_agent_message_start(
-        sess,
-        turn_context,
-        pending_agent_message_items,
-        started_agent_message_items,
-        &agent_message_id,
-    )
-    .await;
+    maybe_emit_pending_agent_message_start(sess, turn_context, state, &agent_message_id).await;
 
-    if !started_agent_message_items.contains(&agent_message_id) {
-        let start_item = pending_agent_message_items
+    if !state
+        .started_agent_message_items
+        .contains(&agent_message_id)
+    {
+        let start_item = state
+            .pending_agent_message_items
             .remove(&agent_message_id)
             .unwrap_or_else(|| {
                 TurnItem::AgentMessage(codex_protocol::items::AgentMessageItem {
@@ -3853,12 +3859,14 @@ async fn emit_plan_mode_agent_message(
                 })
             });
         sess.emit_turn_item_started(turn_context, &start_item).await;
-        started_agent_message_items.insert(agent_message_id.clone());
+        state
+            .started_agent_message_items
+            .insert(agent_message_id.clone());
     }
 
     sess.emit_turn_item_completed(turn_context, TurnItem::AgentMessage(agent_message))
         .await;
-    started_agent_message_items.remove(&agent_message_id);
+    state.started_agent_message_items.remove(&agent_message_id);
 }
 
 /// Emit completion for a plan-mode turn item, handling agent messages specially.
@@ -3867,19 +3875,11 @@ async fn emit_plan_mode_turn_item_completion(
     turn_context: &TurnContext,
     turn_item: TurnItem,
     previously_active_item: Option<&TurnItem>,
-    pending_agent_message_items: &mut HashMap<String, TurnItem>,
-    started_agent_message_items: &mut HashSet<String>,
+    state: &mut PlanModeState,
 ) {
     match turn_item {
         TurnItem::AgentMessage(agent_message) => {
-            emit_plan_mode_agent_message(
-                sess,
-                turn_context,
-                agent_message,
-                pending_agent_message_items,
-                started_agent_message_items,
-            )
-            .await;
+            emit_plan_mode_agent_message(sess, turn_context, agent_message, state).await;
         }
         _ => {
             if previously_active_item.is_none() {
@@ -3895,16 +3895,14 @@ async fn handle_plan_mode_assistant_item_done(
     sess: &Session,
     turn_context: &TurnContext,
     item: &ResponseItem,
-    plan_item_state: &mut Option<PlanItemState>,
-    pending_agent_message_items: &mut HashMap<String, TurnItem>,
-    started_agent_message_items: &mut HashSet<String>,
+    state: &mut PlanModeState,
     previously_active_item: Option<&TurnItem>,
     last_agent_message: &mut Option<String>,
 ) -> bool {
     if let ResponseItem::Message { role, .. } = item
         && role == "assistant"
     {
-        maybe_complete_plan_item_from_message(sess, turn_context, plan_item_state, item).await;
+        maybe_complete_plan_item_from_message(sess, turn_context, state, item).await;
 
         if let Some(turn_item) = handle_non_tool_response_item(item, true).await {
             emit_plan_mode_turn_item_completion(
@@ -3912,8 +3910,7 @@ async fn handle_plan_mode_assistant_item_done(
                 turn_context,
                 turn_item,
                 previously_active_item,
-                pending_agent_message_items,
-                started_agent_message_items,
+                state,
             )
             .await;
         }
@@ -3926,6 +3923,48 @@ async fn handle_plan_mode_assistant_item_done(
         return true;
     }
     false
+}
+
+async fn flush_reasoning_plan_tails(
+    sess: &Session,
+    turn_context: &TurnContext,
+    state: &mut PlanModeState,
+) {
+    if let (Some(item_id), Some(summary_index)) = (
+        state.last_reasoning_summary_item_id.as_ref(),
+        state.last_reasoning_summary_index,
+    ) {
+        let tail = collect_plan_normal_text(state.reasoning_summary_plan_parser.finish());
+        if !tail.is_empty() {
+            let event = ReasoningContentDeltaEvent {
+                thread_id: sess.conversation_id.to_string(),
+                turn_id: turn_context.sub_id.clone(),
+                item_id: item_id.clone(),
+                delta: tail,
+                summary_index,
+            };
+            sess.send_event(turn_context, EventMsg::ReasoningContentDelta(event))
+                .await;
+        }
+    }
+
+    if let (Some(item_id), Some(content_index)) = (
+        state.last_reasoning_raw_item_id.as_ref(),
+        state.last_reasoning_raw_index,
+    ) {
+        let tail = collect_plan_normal_text(state.reasoning_raw_plan_parser.finish());
+        if !tail.is_empty() {
+            let event = ReasoningRawContentDeltaEvent {
+                thread_id: sess.conversation_id.to_string(),
+                turn_id: turn_context.sub_id.clone(),
+                item_id: item_id.clone(),
+                delta: tail,
+                content_index,
+            };
+            sess.send_event(turn_context, EventMsg::ReasoningRawContentDelta(event))
+                .await;
+        }
+    }
 }
 
 async fn drain_in_flight(
@@ -4009,16 +4048,7 @@ async fn try_run_sampling_request(
     let mut active_item: Option<TurnItem> = None;
     let mut should_emit_turn_diff = false;
     let plan_mode = turn_context.collaboration_mode_kind == ModeKind::Plan;
-    let mut proposed_plan_parser = plan_mode.then(ProposedPlanParser::new);
-    let mut reasoning_summary_plan_parser = plan_mode.then(ProposedPlanParser::new);
-    let mut reasoning_raw_plan_parser = plan_mode.then(ProposedPlanParser::new);
-    let mut pending_agent_message_items: HashMap<String, TurnItem> = HashMap::new();
-    let mut started_agent_message_items: HashSet<String> = HashSet::new();
-    let mut plan_item_state = plan_mode.then(|| PlanItemState::new(&turn_context.sub_id));
-    let mut last_reasoning_summary_index: Option<i64> = None;
-    let mut last_reasoning_raw_index: Option<i64> = None;
-    let mut last_reasoning_summary_item_id: Option<String> = None;
-    let mut last_reasoning_raw_item_id: Option<String> = None;
+    let mut plan_mode_state = plan_mode.then(|| PlanModeState::new(&turn_context.sub_id));
     let receiving_span = trace_span!("receiving_stream");
     let outcome: CodexResult<SamplingRequestResult> = loop {
         let handle_responses = trace_span!(
@@ -4057,33 +4087,26 @@ async fn try_run_sampling_request(
             ResponseEvent::Created => {}
             ResponseEvent::OutputItemDone(item) => {
                 let previously_active_item = active_item.take();
-                if let Some(parser) = proposed_plan_parser.as_mut() {
+                if let Some(state) = plan_mode_state.as_mut() {
                     flush_proposed_plan_segments(
                         &sess,
                         &turn_context,
-                        &mut plan_item_state,
-                        &mut pending_agent_message_items,
-                        &mut started_agent_message_items,
-                        parser,
+                        state,
                         previously_active_item.as_ref(),
                     )
                     .await;
-                }
-
-                if plan_mode
-                    && handle_plan_mode_assistant_item_done(
+                    if handle_plan_mode_assistant_item_done(
                         &sess,
                         &turn_context,
                         &item,
-                        &mut plan_item_state,
-                        &mut pending_agent_message_items,
-                        &mut started_agent_message_items,
+                        state,
                         previously_active_item.as_ref(),
                         &mut last_agent_message,
                     )
                     .await
-                {
-                    continue;
+                    {
+                        continue;
+                    }
                 }
 
                 let mut ctx = HandleOutputCtx {
@@ -4106,9 +4129,13 @@ async fn try_run_sampling_request(
             }
             ResponseEvent::OutputItemAdded(item) => {
                 if let Some(turn_item) = handle_non_tool_response_item(&item, plan_mode).await {
-                    if plan_mode && matches!(turn_item, TurnItem::AgentMessage(_)) {
+                    if let Some(state) = plan_mode_state.as_mut()
+                        && matches!(turn_item, TurnItem::AgentMessage(_))
+                    {
                         let item_id = turn_item.id();
-                        pending_agent_message_items.insert(item_id, turn_item.clone());
+                        state
+                            .pending_agent_message_items
+                            .insert(item_id, turn_item.clone());
                     } else {
                         sess.emit_turn_item_started(&turn_context, &turn_item).await;
                     }
@@ -4135,55 +4162,10 @@ async fn try_run_sampling_request(
                 response_id: _,
                 token_usage,
             } => {
-                if let Some(parser) = proposed_plan_parser.as_mut() {
-                    flush_proposed_plan_segments(
-                        &sess,
-                        &turn_context,
-                        &mut plan_item_state,
-                        &mut pending_agent_message_items,
-                        &mut started_agent_message_items,
-                        parser,
-                        active_item.as_ref(),
-                    )
-                    .await;
-                }
-                if let Some(parser) = reasoning_summary_plan_parser.as_mut()
-                    && let (Some(item_id), Some(summary_index)) = (
-                        last_reasoning_summary_item_id.as_ref(),
-                        last_reasoning_summary_index,
-                    )
-                {
-                    let tail = collect_plan_normal_text(parser.finish());
-                    if !tail.is_empty() {
-                        let event = ReasoningContentDeltaEvent {
-                            thread_id: sess.conversation_id.to_string(),
-                            turn_id: turn_context.sub_id.clone(),
-                            item_id: item_id.clone(),
-                            delta: tail,
-                            summary_index,
-                        };
-                        sess.send_event(&turn_context, EventMsg::ReasoningContentDelta(event))
-                            .await;
-                    }
-                }
-                if let Some(parser) = reasoning_raw_plan_parser.as_mut()
-                    && let (Some(item_id), Some(content_index)) = (
-                        last_reasoning_raw_item_id.as_ref(),
-                        last_reasoning_raw_index,
-                    )
-                {
-                    let tail = collect_plan_normal_text(parser.finish());
-                    if !tail.is_empty() {
-                        let event = ReasoningRawContentDeltaEvent {
-                            thread_id: sess.conversation_id.to_string(),
-                            turn_id: turn_context.sub_id.clone(),
-                            item_id: item_id.clone(),
-                            delta: tail,
-                            content_index,
-                        };
-                        sess.send_event(&turn_context, EventMsg::ReasoningRawContentDelta(event))
-                            .await;
-                    }
+                if let Some(state) = plan_mode_state.as_mut() {
+                    flush_proposed_plan_segments(&sess, &turn_context, state, active_item.as_ref())
+                        .await;
+                    flush_reasoning_plan_tails(&sess, &turn_context, state).await;
                 }
                 sess.update_token_usage_info(&turn_context, token_usage.as_ref())
                     .await;
@@ -4201,21 +4183,11 @@ async fn try_run_sampling_request(
                 // UI will show a selection popup from the final ReviewOutput.
                 if let Some(active) = active_item.as_ref() {
                     let item_id = active.id();
-                    if plan_mode
-                        && let Some(parser) = proposed_plan_parser.as_mut()
+                    if let Some(state) = plan_mode_state.as_mut()
                         && matches!(active, TurnItem::AgentMessage(_))
                     {
-                        let segments = parser.parse(&delta);
-                        handle_plan_segments(
-                            &sess,
-                            &turn_context,
-                            &mut plan_item_state,
-                            &mut pending_agent_message_items,
-                            &mut started_agent_message_items,
-                            &item_id,
-                            segments,
-                        )
-                        .await;
+                        let segments = state.proposed_plan_parser.parse(&delta);
+                        handle_plan_segments(&sess, &turn_context, state, &item_id, segments).await;
                     } else {
                         let event = AgentMessageContentDeltaEvent {
                             thread_id: sess.conversation_id.to_string(),
@@ -4235,10 +4207,10 @@ async fn try_run_sampling_request(
                 summary_index,
             } => {
                 if let Some(active) = active_item.as_ref() {
-                    let filtered = if let Some(parser) = reasoning_summary_plan_parser.as_mut() {
-                        last_reasoning_summary_index = Some(summary_index);
-                        last_reasoning_summary_item_id = Some(active.id());
-                        collect_plan_normal_text(parser.parse(&delta))
+                    let filtered = if let Some(state) = plan_mode_state.as_mut() {
+                        state.last_reasoning_summary_index = Some(summary_index);
+                        state.last_reasoning_summary_item_id = Some(active.id());
+                        collect_plan_normal_text(state.reasoning_summary_plan_parser.parse(&delta))
                     } else {
                         delta
                     };
@@ -4275,10 +4247,10 @@ async fn try_run_sampling_request(
                 content_index,
             } => {
                 if let Some(active) = active_item.as_ref() {
-                    let filtered = if let Some(parser) = reasoning_raw_plan_parser.as_mut() {
-                        last_reasoning_raw_index = Some(content_index);
-                        last_reasoning_raw_item_id = Some(active.id());
-                        collect_plan_normal_text(parser.parse(&delta))
+                    let filtered = if let Some(state) = plan_mode_state.as_mut() {
+                        state.last_reasoning_raw_index = Some(content_index);
+                        state.last_reasoning_raw_item_id = Some(active.id());
+                        collect_plan_normal_text(state.reasoning_raw_plan_parser.parse(&delta))
                     } else {
                         delta
                     };
