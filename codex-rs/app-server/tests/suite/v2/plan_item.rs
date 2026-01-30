@@ -113,14 +113,10 @@ async fn plan_mode_without_proposed_plan_does_not_emit_plan_item() -> Result<()>
     let _turn = start_plan_mode_turn(&mut mcp).await?;
     let (_, completed_items, plan_deltas, _) = collect_turn_notifications(&mut mcp).await?;
 
-    let plan_items = completed_items
+    let has_plan_item = completed_items
         .iter()
-        .filter_map(|item| match item {
-            ThreadItem::Plan { .. } => Some(item.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert!(plan_items.is_empty());
+        .any(|item| matches!(item, ThreadItem::Plan { .. }));
+    assert!(!has_plan_item);
     assert!(plan_deltas.is_empty());
 
     Ok(())
