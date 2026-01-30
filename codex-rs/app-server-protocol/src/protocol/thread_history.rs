@@ -1,3 +1,4 @@
+use crate::protocol::v2::ItemCompletedNotification;
 use crate::protocol::v2::ThreadItem;
 use crate::protocol::v2::Turn;
 use crate::protocol::v2::TurnError;
@@ -6,7 +7,6 @@ use crate::protocol::v2::UserInput;
 use codex_protocol::protocol::AgentReasoningEvent;
 use codex_protocol::protocol::AgentReasoningRawContentEvent;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::ItemCompletedNotification;
 use codex_protocol::protocol::ThreadRolledBackEvent;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::UserMessageEvent;
