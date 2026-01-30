@@ -165,10 +165,16 @@ pub(crate) async fn handle_non_tool_response_item(
         | ResponseItem::WebSearchCall { .. } => {
             let mut turn_item = parse_turn_item(item)?;
             if plan_mode && let TurnItem::AgentMessage(agent_message) = &mut turn_item {
-                for content in &mut agent_message.content {
-                    let codex_protocol::items::AgentMessageContent::Text { text } = content;
-                    *text = strip_proposed_plan_blocks(text);
-                }
+                let combined = agent_message
+                    .content
+                    .iter()
+                    .map(|entry| match entry {
+                        codex_protocol::items::AgentMessageContent::Text { text } => text.as_str(),
+                    })
+                    .collect::<String>();
+                let stripped = strip_proposed_plan_blocks(&combined);
+                agent_message.content =
+                    vec![codex_protocol::items::AgentMessageContent::Text { text: stripped }];
             }
             Some(turn_item)
         }
