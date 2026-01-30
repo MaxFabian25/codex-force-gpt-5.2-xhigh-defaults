@@ -27,8 +27,8 @@ fn plan_preset() -> CollaborationModeMask {
     CollaborationModeMask {
         name: "Plan".to_string(),
         mode: Some(ModeKind::Plan),
-        model: None,
-        reasoning_effort: Some(Some(ReasoningEffort::Medium)),
+        model: Some("gpt-5.2".to_string()),
+        reasoning_effort: Some(Some(ReasoningEffort::XHigh)),
         developer_instructions: Some(Some(COLLABORATION_MODE_PLAN.to_string())),
     }
 }
@@ -37,8 +37,8 @@ fn code_preset() -> CollaborationModeMask {
     CollaborationModeMask {
         name: "Code".to_string(),
         mode: Some(ModeKind::Code),
-        model: None,
-        reasoning_effort: None,
+        model: Some("gpt-5.2".to_string()),
+        reasoning_effort: Some(Some(ReasoningEffort::XHigh)),
         developer_instructions: Some(Some(COLLABORATION_MODE_CODE.to_string())),
     }
 }
@@ -47,8 +47,8 @@ fn pair_programming_preset() -> CollaborationModeMask {
     CollaborationModeMask {
         name: "Pair Programming".to_string(),
         mode: Some(ModeKind::PairProgramming),
-        model: None,
-        reasoning_effort: Some(Some(ReasoningEffort::Medium)),
+        model: Some("gpt-5.2".to_string()),
+        reasoning_effort: Some(Some(ReasoningEffort::XHigh)),
         developer_instructions: Some(Some(COLLABORATION_MODE_PAIR_PROGRAMMING.to_string())),
     }
 }
@@ -57,8 +57,8 @@ fn execute_preset() -> CollaborationModeMask {
     CollaborationModeMask {
         name: "Execute".to_string(),
         mode: Some(ModeKind::Execute),
-        model: None,
-        reasoning_effort: Some(Some(ReasoningEffort::High)),
+        model: Some("gpt-5.2".to_string()),
+        reasoning_effort: Some(Some(ReasoningEffort::XHigh)),
         developer_instructions: Some(Some(COLLABORATION_MODE_EXECUTE.to_string())),
     }
 }

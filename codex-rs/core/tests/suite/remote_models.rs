@@ -445,9 +445,9 @@ async fn remote_models_preserve_builtin_presets() -> Result<()> {
     assert_eq!(*remote, expected_remote);
     let default_model = available
         .iter()
-        .find(|model| model.show_in_picker)
+        .find(|model| model.is_default)
         .expect("default model should be set");
-    assert!(default_model.is_default);
+    assert_eq!(default_model.model, "gpt-5.2");
     assert_eq!(
         available.iter().filter(|model| model.is_default).count(),
         1,
@@ -651,7 +651,7 @@ async fn remote_models_request_times_out_after_5s() -> Result<()> {
     // get_model should return a default model even when refresh times out
     let default_model = model.expect("get_model should finish and return default model");
     assert!(
-        default_model == "gpt-5.2-codex",
+        default_model == "gpt-5.2",
         "get_model should return default model when refresh times out, got: {default_model}"
     );
     let _ = server
@@ -711,7 +711,7 @@ async fn remote_models_hide_picker_only_models() -> Result<()> {
     let selected = manager
         .get_default_model(&None, &config, RefreshStrategy::OnlineIfUncached)
         .await;
-    assert_eq!(selected, "gpt-5.2-codex");
+    assert_eq!(selected, "gpt-5.2");
 
     let available = manager
         .list_models(&config, RefreshStrategy::OnlineIfUncached)
