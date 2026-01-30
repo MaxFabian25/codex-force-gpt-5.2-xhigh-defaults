@@ -3759,19 +3759,23 @@ async fn handle_plan_segments(
     for segment in segments {
         match segment {
             ProposedPlanSegment::Normal(delta) => {
-                if !delta.is_empty() {
-                    maybe_emit_pending_agent_message_start(sess, turn_context, state, item_id)
-                        .await;
-
-                    let event = AgentMessageContentDeltaEvent {
-                        thread_id: sess.conversation_id.to_string(),
-                        turn_id: turn_context.sub_id.clone(),
-                        item_id: item_id.to_string(),
-                        delta,
-                    };
-                    sess.send_event(turn_context, EventMsg::AgentMessageContentDelta(event))
-                        .await;
+                if delta.is_empty() {
+                    return;
                 }
+                let has_non_whitespace = delta.chars().any(|ch| !ch.is_whitespace());
+                if !has_non_whitespace && !state.started_agent_message_items.contains(item_id) {
+                    return;
+                }
+                maybe_emit_pending_agent_message_start(sess, turn_context, state, item_id).await;
+
+                let event = AgentMessageContentDeltaEvent {
+                    thread_id: sess.conversation_id.to_string(),
+                    turn_id: turn_context.sub_id.clone(),
+                    item_id: item_id.to_string(),
+                    delta,
+                };
+                sess.send_event(turn_context, EventMsg::AgentMessageContentDelta(event))
+                    .await;
             }
             ProposedPlanSegment::ProposedPlanStart => {
                 if !state.plan_item_state.completed {
