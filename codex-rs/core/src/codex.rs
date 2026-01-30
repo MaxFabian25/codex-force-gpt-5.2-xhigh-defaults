@@ -3608,44 +3608,53 @@ struct ProposedPlanItemState {
     completed: bool,
 }
 
+/// Per-item tag parsers so we never mix buffered text across item ids.
+struct PlanParsers {
+    assistant: HashMap<String, ProposedPlanParser>,
+}
+
+impl PlanParsers {
+    fn new() -> Self {
+        Self {
+            assistant: HashMap::new(),
+        }
+    }
+
+    fn assistant_parser_mut(&mut self, item_id: &str) -> &mut ProposedPlanParser {
+        self.assistant
+            .entry(item_id.to_string())
+            .or_insert_with(ProposedPlanParser::new)
+    }
+
+    fn take_assistant_parser(&mut self, item_id: &str) -> Option<ProposedPlanParser> {
+        self.assistant.remove(item_id)
+    }
+
+    fn drain_assistant_parsers(&mut self) -> Vec<(String, ProposedPlanParser)> {
+        self.assistant.drain().collect()
+    }
+}
+
 /// Aggregated state used only while streaming a plan-mode response.
-/// Includes parsers, deferred agent message bookkeeping, and the plan item lifecycle.
+/// Includes per-item parsers, deferred agent message bookkeeping, and the plan item lifecycle.
 struct PlanModeStreamState {
-    /// Parses assistant message deltas to split plan vs non-plan output.
-    proposed_plan_parser: ProposedPlanParser,
-    /// Filters plan tags/content out of reasoning summary deltas.
-    reasoning_summary_plan_parser: ProposedPlanParser,
-    /// Filters plan tags/content out of raw reasoning deltas.
-    reasoning_raw_plan_parser: ProposedPlanParser,
+    /// Per-item parsers for assistant streams in plan mode.
+    plan_parsers: PlanParsers,
     /// Agent message items started by the model but deferred until we see non-plan text.
     pending_agent_message_items: HashMap<String, TurnItem>,
     /// Agent message items whose start notification has been emitted.
     started_agent_message_items: HashSet<String>,
     /// Tracks plan item lifecycle while streaming plan output.
     plan_item_state: ProposedPlanItemState,
-    /// Last summary index seen in reasoning deltas (for tail flush).
-    last_reasoning_summary_index: Option<i64>,
-    /// Last content index seen in reasoning deltas (for tail flush).
-    last_reasoning_raw_index: Option<i64>,
-    /// Item id associated with the last reasoning summary delta.
-    last_reasoning_summary_item_id: Option<String>,
-    /// Item id associated with the last raw reasoning delta.
-    last_reasoning_raw_item_id: Option<String>,
 }
 
 impl PlanModeStreamState {
     fn new(turn_id: &str) -> Self {
         Self {
-            proposed_plan_parser: ProposedPlanParser::new(),
-            reasoning_summary_plan_parser: ProposedPlanParser::new(),
-            reasoning_raw_plan_parser: ProposedPlanParser::new(),
+            plan_parsers: PlanParsers::new(),
             pending_agent_message_items: HashMap::new(),
             started_agent_message_items: HashSet::new(),
             plan_item_state: ProposedPlanItemState::new(turn_id),
-            last_reasoning_summary_index: None,
-            last_reasoning_raw_index: None,
-            last_reasoning_summary_item_id: None,
-            last_reasoning_raw_item_id: None,
         }
     }
 }
@@ -3736,16 +3745,6 @@ fn agent_message_text(item: &codex_protocol::items::AgentMessageItem) -> String 
         .collect()
 }
 
-fn collect_plan_normal_text(segments: Vec<ProposedPlanSegment>) -> String {
-    let mut out = String::new();
-    for segment in segments {
-        if let ProposedPlanSegment::Normal(text) = segment {
-            out.push_str(&text);
-        }
-    }
-    out
-}
-
 /// Split the stream into normal assistant text vs. proposed plan content.
 /// Normal text becomes AgentMessage deltas; plan content becomes PlanDelta +
 /// TurnItem::Plan.
@@ -3794,21 +3793,34 @@ async fn handle_plan_segments(
     }
 }
 
-/// Flush any buffered proposed-plan segments when the active assistant message ends.
-async fn flush_proposed_plan_segments(
+/// Flush any buffered proposed-plan segments when a specific assistant message ends.
+async fn flush_proposed_plan_segments_for_item(
     sess: &Session,
     turn_context: &TurnContext,
     state: &mut PlanModeStreamState,
-    active_item: Option<&TurnItem>,
+    item_id: &str,
 ) {
-    if let Some(active) = active_item
-        && matches!(active, TurnItem::AgentMessage(_))
-    {
-        let segments = state.proposed_plan_parser.finish();
+    let Some(mut parser) = state.plan_parsers.take_assistant_parser(item_id) else {
+        return;
+    };
+    let segments = parser.finish();
+    if segments.is_empty() {
+        return;
+    }
+    handle_plan_segments(sess, turn_context, state, item_id, segments).await;
+}
+
+/// Flush any remaining assistant plan parsers when the response completes.
+async fn flush_proposed_plan_segments_all(
+    sess: &Session,
+    turn_context: &TurnContext,
+    state: &mut PlanModeStreamState,
+) {
+    for (item_id, mut parser) in state.plan_parsers.drain_assistant_parsers() {
+        let segments = parser.finish();
         if segments.is_empty() {
-            return;
+            continue;
         }
-        let item_id = active.id();
         handle_plan_segments(sess, turn_context, state, &item_id, segments).await;
     }
 }
@@ -3842,7 +3854,7 @@ async fn maybe_complete_plan_item_from_message(
 }
 
 /// Emit a completed agent message in plan mode, respecting deferred starts.
-async fn emit_plan_mode_agent_message(
+async fn emit_agent_message_in_plan_mode(
     sess: &Session,
     turn_context: &TurnContext,
     agent_message: codex_protocol::items::AgentMessageItem,
@@ -3883,7 +3895,7 @@ async fn emit_plan_mode_agent_message(
 }
 
 /// Emit completion for a plan-mode turn item, handling agent messages specially.
-async fn emit_plan_mode_turn_item_completion(
+async fn emit_turn_item_in_plan_mode(
     sess: &Session,
     turn_context: &TurnContext,
     turn_item: TurnItem,
@@ -3892,7 +3904,7 @@ async fn emit_plan_mode_turn_item_completion(
 ) {
     match turn_item {
         TurnItem::AgentMessage(agent_message) => {
-            emit_plan_mode_agent_message(sess, turn_context, agent_message, state).await;
+            emit_agent_message_in_plan_mode(sess, turn_context, agent_message, state).await;
         }
         _ => {
             if previously_active_item.is_none() {
@@ -3904,7 +3916,7 @@ async fn emit_plan_mode_turn_item_completion(
 }
 
 /// Handle a completed assistant response item in plan mode, returning true if handled.
-async fn handle_plan_mode_assistant_item_done(
+async fn handle_assistant_item_done_in_plan_mode(
     sess: &Session,
     turn_context: &TurnContext,
     item: &ResponseItem,
@@ -3918,7 +3930,7 @@ async fn handle_plan_mode_assistant_item_done(
         maybe_complete_plan_item_from_message(sess, turn_context, state, item).await;
 
         if let Some(turn_item) = handle_non_tool_response_item(item, true).await {
-            emit_plan_mode_turn_item_completion(
+            emit_turn_item_in_plan_mode(
                 sess,
                 turn_context,
                 turn_item,
@@ -3936,48 +3948,6 @@ async fn handle_plan_mode_assistant_item_done(
         return true;
     }
     false
-}
-
-async fn flush_reasoning_plan_tails(
-    sess: &Session,
-    turn_context: &TurnContext,
-    state: &mut PlanModeStreamState,
-) {
-    if let (Some(item_id), Some(summary_index)) = (
-        state.last_reasoning_summary_item_id.as_ref(),
-        state.last_reasoning_summary_index,
-    ) {
-        let tail = collect_plan_normal_text(state.reasoning_summary_plan_parser.finish());
-        if !tail.is_empty() {
-            let event = ReasoningContentDeltaEvent {
-                thread_id: sess.conversation_id.to_string(),
-                turn_id: turn_context.sub_id.clone(),
-                item_id: item_id.clone(),
-                delta: tail,
-                summary_index,
-            };
-            sess.send_event(turn_context, EventMsg::ReasoningContentDelta(event))
-                .await;
-        }
-    }
-
-    if let (Some(item_id), Some(content_index)) = (
-        state.last_reasoning_raw_item_id.as_ref(),
-        state.last_reasoning_raw_index,
-    ) {
-        let tail = collect_plan_normal_text(state.reasoning_raw_plan_parser.finish());
-        if !tail.is_empty() {
-            let event = ReasoningRawContentDeltaEvent {
-                thread_id: sess.conversation_id.to_string(),
-                turn_id: turn_context.sub_id.clone(),
-                item_id: item_id.clone(),
-                delta: tail,
-                content_index,
-            };
-            sess.send_event(turn_context, EventMsg::ReasoningRawContentDelta(event))
-                .await;
-        }
-    }
 }
 
 async fn drain_in_flight(
@@ -4101,14 +4071,19 @@ async fn try_run_sampling_request(
             ResponseEvent::OutputItemDone(item) => {
                 let previously_active_item = active_item.take();
                 if let Some(state) = plan_mode_state.as_mut() {
-                    flush_proposed_plan_segments(
-                        &sess,
-                        &turn_context,
-                        state,
-                        previously_active_item.as_ref(),
-                    )
-                    .await;
-                    if handle_plan_mode_assistant_item_done(
+                    if let Some(previous) = previously_active_item.as_ref() {
+                        let item_id = previous.id();
+                        if matches!(previous, TurnItem::AgentMessage(_)) {
+                            flush_proposed_plan_segments_for_item(
+                                &sess,
+                                &turn_context,
+                                state,
+                                &item_id,
+                            )
+                            .await;
+                        }
+                    }
+                    if handle_assistant_item_done_in_plan_mode(
                         &sess,
                         &turn_context,
                         &item,
@@ -4176,9 +4151,7 @@ async fn try_run_sampling_request(
                 token_usage,
             } => {
                 if let Some(state) = plan_mode_state.as_mut() {
-                    flush_proposed_plan_segments(&sess, &turn_context, state, active_item.as_ref())
-                        .await;
-                    flush_reasoning_plan_tails(&sess, &turn_context, state).await;
+                    flush_proposed_plan_segments_all(&sess, &turn_context, state).await;
                 }
                 sess.update_token_usage_info(&turn_context, token_usage.as_ref())
                     .await;
@@ -4199,7 +4172,10 @@ async fn try_run_sampling_request(
                     if let Some(state) = plan_mode_state.as_mut()
                         && matches!(active, TurnItem::AgentMessage(_))
                     {
-                        let segments = state.proposed_plan_parser.parse(&delta);
+                        let segments = state
+                            .plan_parsers
+                            .assistant_parser_mut(&item_id)
+                            .parse(&delta);
                         handle_plan_segments(&sess, &turn_context, state, &item_id, segments).await;
                     } else {
                         let event = AgentMessageContentDeltaEvent {
@@ -4220,21 +4196,11 @@ async fn try_run_sampling_request(
                 summary_index,
             } => {
                 if let Some(active) = active_item.as_ref() {
-                    let filtered = if let Some(state) = plan_mode_state.as_mut() {
-                        state.last_reasoning_summary_index = Some(summary_index);
-                        state.last_reasoning_summary_item_id = Some(active.id());
-                        collect_plan_normal_text(state.reasoning_summary_plan_parser.parse(&delta))
-                    } else {
-                        delta
-                    };
-                    if filtered.is_empty() {
-                        continue;
-                    }
                     let event = ReasoningContentDeltaEvent {
                         thread_id: sess.conversation_id.to_string(),
                         turn_id: turn_context.sub_id.clone(),
                         item_id: active.id(),
-                        delta: filtered,
+                        delta,
                         summary_index,
                     };
                     sess.send_event(&turn_context, EventMsg::ReasoningContentDelta(event))
@@ -4260,21 +4226,11 @@ async fn try_run_sampling_request(
                 content_index,
             } => {
                 if let Some(active) = active_item.as_ref() {
-                    let filtered = if let Some(state) = plan_mode_state.as_mut() {
-                        state.last_reasoning_raw_index = Some(content_index);
-                        state.last_reasoning_raw_item_id = Some(active.id());
-                        collect_plan_normal_text(state.reasoning_raw_plan_parser.parse(&delta))
-                    } else {
-                        delta
-                    };
-                    if filtered.is_empty() {
-                        continue;
-                    }
                     let event = ReasoningRawContentDeltaEvent {
                         thread_id: sess.conversation_id.to_string(),
                         turn_id: turn_context.sub_id.clone(),
                         item_id: active.id(),
-                        delta: filtered,
+                        delta,
                         content_index,
                     };
                     sess.send_event(&turn_context, EventMsg::ReasoningRawContentDelta(event))
