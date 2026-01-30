@@ -3608,15 +3608,25 @@ struct PlanItemState {
 }
 
 struct PlanModeState {
+    /// Parses assistant message deltas to split plan vs non-plan output.
     proposed_plan_parser: ProposedPlanParser,
+    /// Filters plan tags/content out of reasoning summary deltas.
     reasoning_summary_plan_parser: ProposedPlanParser,
+    /// Filters plan tags/content out of raw reasoning deltas.
     reasoning_raw_plan_parser: ProposedPlanParser,
+    /// Agent message items started by the model but deferred until we see non-plan text.
     pending_agent_message_items: HashMap<String, TurnItem>,
+    /// Agent message items whose start notification has been emitted.
     started_agent_message_items: HashSet<String>,
+    /// Tracks plan item lifecycle while streaming plan output.
     plan_item_state: PlanItemState,
+    /// Last summary index seen in reasoning deltas (for tail flush).
     last_reasoning_summary_index: Option<i64>,
+    /// Last content index seen in reasoning deltas (for tail flush).
     last_reasoning_raw_index: Option<i64>,
+    /// Item id associated with the last reasoning summary delta.
     last_reasoning_summary_item_id: Option<String>,
+    /// Item id associated with the last raw reasoning delta.
     last_reasoning_raw_item_id: Option<String>,
 }
 
