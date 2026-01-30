@@ -308,7 +308,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 item: TurnItem::Plan(item),
                 ..
             }) => {
-                self.last_proposed_plan = Some(item.text.clone());
+                self.last_proposed_plan = Some(item.text);
             }
             EventMsg::ExecCommandBegin(ExecCommandBeginEvent { command, cwd, .. }) => {
                 eprint!(
