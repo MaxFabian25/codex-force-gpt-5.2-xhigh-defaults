@@ -3608,7 +3608,8 @@ struct ProposedPlanItemState {
     completed: bool,
 }
 
-/// Per-item tag parsers so we never mix buffered text across item ids.
+/// Per-item plan parsers so we can buffer text while detecting `<proposed_plan>`
+/// tags without ever mixing buffered lines across item ids.
 struct PlanParsers {
     assistant: HashMap<String, ProposedPlanParser>,
 }
