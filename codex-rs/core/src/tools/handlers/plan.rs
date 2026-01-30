@@ -106,7 +106,7 @@ pub(crate) async fn handle_update_plan(
 ) -> Result<String, FunctionCallError> {
     if turn_context.collaboration_mode_kind == ModeKind::Plan {
         return Err(FunctionCallError::RespondToModel(
-            "update_plan is not available in Plan mode".to_string(),
+            "update_plan is a TODO/checklist tool and is not allowed in Plan mode".to_string(),
         ));
     }
     let args = parse_update_plan_arguments(&arguments)?;
