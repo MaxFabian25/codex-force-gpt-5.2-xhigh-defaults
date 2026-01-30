@@ -1955,6 +1955,8 @@ pub enum ThreadItem {
     AgentMessage { id: String, text: String },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
+    /// EXPERIMENTAL - proposed plan item content. The completed plan item is
+    /// authoritative and may not match the concatenation of `PlanDelta` text.
     Plan { id: String, text: String },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
@@ -2347,7 +2349,8 @@ pub struct AgentMessageDeltaNotification {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL - proposed plan streaming deltas for plan items.
+/// EXPERIMENTAL - proposed plan streaming deltas for plan items. Clients should
+/// not assume concatenated deltas match the completed plan item content.
 pub struct PlanDeltaNotification {
     pub thread_id: String,
     pub turn_id: String,
