@@ -2,7 +2,7 @@
 
 This is an **unofficial fork** of OpenAI's Codex CLI (`openai/codex`).
 
-The goal of this fork is simple: **make Codex default to `gpt-5.2` (not `gpt-5.2-codex`) everywhere**, with:
+The goal of this fork is simple: **make Codex default to `gpt-5.2` everywhere**, with:
 
 - `model_reasoning_effort = xhigh`
 - `model_verbosity = high`
