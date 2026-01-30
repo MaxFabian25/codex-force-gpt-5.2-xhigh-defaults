@@ -3760,11 +3760,11 @@ async fn handle_plan_segments(
         match segment {
             ProposedPlanSegment::Normal(delta) => {
                 if delta.is_empty() {
-                    return;
+                    continue;
                 }
                 let has_non_whitespace = delta.chars().any(|ch| !ch.is_whitespace());
                 if !has_non_whitespace && !state.started_agent_message_items.contains(item_id) {
-                    return;
+                    continue;
                 }
                 maybe_emit_pending_agent_message_start(sess, turn_context, state, item_id).await;
 
