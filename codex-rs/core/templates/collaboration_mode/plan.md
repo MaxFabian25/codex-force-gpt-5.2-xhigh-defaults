@@ -10,11 +10,9 @@ Plan Mode is not changed by user intent, tone, or imperative language. If a user
 
 ## Plan Mode vs update_plan tool
 
-Plan Mode is a collaboration mode that restricts behavior and requires a `<proposed_plan>` block.
+Plan Mode is a collaboration mode that can involve requesting user input and eventually issuing a `<proposed_plan>` block.
 
-`update_plan` is a checklist/progress tool; it does not enter or exit Plan Mode.
-
-Plan Mode output streams as `EventMsg::PlanDelta`; `update_plan` emits a tool call event.
+Separately, `update_plan` is a checklist/progress/TODOs tool; it does not enter or exit Plan Mode. Do not confuse it with Plan mode or try to use it while in Plan mode. If you try to use `update_plan` in Plan mode, it will respond with an error.
 
 ## Execution vs. mutation in Plan Mode
 
@@ -127,7 +125,6 @@ The final plan must be plan-only and include:
 * Test cases
 * Explicit assumptions and defaults chosen where needed
 
-Keep any text outside the `<proposed_plan>` block minimal.
-Do not ask "should I proceed?" in the final output.
+Do not ask "should I proceed?" in the final output. The user can easily switch out of Plan mode and request implementation if you have included a `<proposed_plan>` block in your response. Alternatively, they can decide to stay in Plan mode and continue refining the plan.
 
-Only produce the final answer when you are presenting the complete spec.
+Only produce a `<proposed_plan>` when you are presenting a complete spec.
