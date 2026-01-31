@@ -218,6 +218,11 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
         .unwrap_or_default()
         .to_string();
     let tool_calls = json!(requests[0]["tools"].as_array());
+    let reasoning = requests[0]["reasoning"].clone();
+    let include = requests[0]["include"].clone();
+    let parallel_tool_calls = requests[0]["parallel_tool_calls"]
+        .as_bool()
+        .unwrap_or(false);
     let prompt_cache_key = requests[0]["prompt_cache_key"]
         .as_str()
         .unwrap_or_default()
@@ -268,16 +273,11 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
       ],
       "tools": tool_calls,
       "tool_choice": "auto",
-      "parallel_tool_calls": false,
-      "reasoning": {
-        "effort": "medium",
-        "summary": "auto"
-      },
+      "parallel_tool_calls": parallel_tool_calls,
+      "reasoning": reasoning.clone(),
       "store": false,
       "stream": true,
-      "include": [
-        "reasoning.encrypted_content"
-      ],
+      "include": include.clone(),
       "prompt_cache_key": prompt_cache_key
     });
     let compact_1 = json!(
@@ -339,16 +339,11 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
       ],
       "tools": [],
       "tool_choice": "auto",
-      "parallel_tool_calls": false,
-      "reasoning": {
-        "effort": "medium",
-        "summary": "auto"
-      },
+      "parallel_tool_calls": parallel_tool_calls,
+      "reasoning": reasoning.clone(),
       "store": false,
       "stream": true,
-      "include": [
-        "reasoning.encrypted_content"
-      ],
+      "include": include.clone(),
       "prompt_cache_key": prompt_cache_key
     });
     let user_turn_2_after_compact = json!(
@@ -401,16 +396,11 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
       ],
       "tools": tool_calls,
       "tool_choice": "auto",
-      "parallel_tool_calls": false,
-      "reasoning": {
-        "effort": "medium",
-        "summary": "auto"
-      },
+      "parallel_tool_calls": parallel_tool_calls,
+      "reasoning": reasoning.clone(),
       "store": false,
       "stream": true,
-      "include": [
-        "reasoning.encrypted_content"
-      ],
+      "include": include.clone(),
       "prompt_cache_key": prompt_cache_key
     });
     let usert_turn_3_after_resume = json!(
@@ -504,16 +494,11 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
       ],
       "tools": tool_calls,
       "tool_choice": "auto",
-      "parallel_tool_calls": false,
-      "reasoning": {
-        "effort": "medium",
-        "summary": "auto"
-      },
+      "parallel_tool_calls": parallel_tool_calls,
+      "reasoning": reasoning.clone(),
       "store": false,
       "stream": true,
-      "include": [
-        "reasoning.encrypted_content"
-      ],
+      "include": include.clone(),
       "prompt_cache_key": prompt_cache_key
     });
     let user_turn_3_after_fork = json!(
@@ -628,16 +613,11 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
       ],
       "tools": tool_calls,
       "tool_choice": "auto",
-      "parallel_tool_calls": false,
-      "reasoning": {
-        "effort": "medium",
-        "summary": "auto"
-      },
+      "parallel_tool_calls": parallel_tool_calls,
+      "reasoning": reasoning.clone(),
       "store": false,
       "stream": true,
-      "include": [
-        "reasoning.encrypted_content"
-      ],
+      "include": include.clone(),
       "prompt_cache_key": fork_prompt_cache_key
     });
     let mut expected = json!([
