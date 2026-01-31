@@ -1,22 +1,27 @@
 use crate::config::Config;
 use crate::protocol::SandboxPolicy;
+use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::config_types::Verbosity;
 use codex_protocol::openai_models::ReasoningEffort;
 use serde::Deserialize;
 use serde::Serialize;
 
 /// Base instructions for the orchestrator role.
 const ORCHESTRATOR_PROMPT: &str = include_str!("../../templates/agents/orchestrator.md");
-/// Default model override used.
-// TODO(jif) update when we have something smarter.
-const EXPLORER_MODEL: &str = "gpt-5.2-codex";
+
+/// Default model override used by spawned sub-agents.
+const DEFAULT_SUBAGENT_MODEL: &str = "gpt-5.2";
+const DEFAULT_SUBAGENT_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::XHigh;
+const DEFAULT_SUBAGENT_VERBOSITY: Verbosity = Verbosity::High;
+const DEFAULT_SUBAGENT_REASONING_SUMMARY: ReasoningSummary = ReasoningSummary::Detailed;
+const DEFAULT_SUBAGENT_SUPPORTS_REASONING_SUMMARIES: bool = true;
 
 /// Enumerated list of all supported agent roles.
-const ALL_ROLES: [AgentRole; 3] = [
+const ALL_ROLES: [AgentRole; 4] = [
     AgentRole::Default,
-    AgentRole::Explorer,
+    AgentRole::Orchestrator,
     AgentRole::Worker,
-    // TODO(jif) add when we have stable prompts + models
-    // AgentRole::Orchestrator,
+    AgentRole::Explorer,
 ];
 
 /// Hard-coded agent role selection used when spawning sub-agents.
@@ -42,6 +47,12 @@ pub struct AgentProfile {
     pub model: Option<&'static str>,
     /// Optional reasoning effort override.
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// Optional verbosity override.
+    pub verbosity: Option<Verbosity>,
+    /// Optional reasoning summary override.
+    pub reasoning_summary: Option<ReasoningSummary>,
+    /// Optional override to force-enable reasoning summaries.
+    pub supports_reasoning_summaries: Option<bool>,
     /// Whether to force a read-only sandbox policy.
     pub read_only: bool,
     /// Description to include in the tool specs.
@@ -75,11 +86,21 @@ impl AgentRole {
             AgentRole::Default => AgentProfile::default(),
             AgentRole::Orchestrator => AgentProfile {
                 base_instructions: Some(ORCHESTRATOR_PROMPT),
+                model: Some(DEFAULT_SUBAGENT_MODEL),
+                reasoning_effort: Some(DEFAULT_SUBAGENT_REASONING_EFFORT),
+                verbosity: Some(DEFAULT_SUBAGENT_VERBOSITY),
+                reasoning_summary: Some(DEFAULT_SUBAGENT_REASONING_SUMMARY),
+                supports_reasoning_summaries: Some(DEFAULT_SUBAGENT_SUPPORTS_REASONING_SUMMARIES),
                 ..Default::default()
             },
             AgentRole::Worker => AgentProfile {
                 // base_instructions: Some(WORKER_PROMPT),
                 // model: Some(WORKER_MODEL),
+                model: Some(DEFAULT_SUBAGENT_MODEL),
+                reasoning_effort: Some(DEFAULT_SUBAGENT_REASONING_EFFORT),
+                verbosity: Some(DEFAULT_SUBAGENT_VERBOSITY),
+                reasoning_summary: Some(DEFAULT_SUBAGENT_REASONING_SUMMARY),
+                supports_reasoning_summaries: Some(DEFAULT_SUBAGENT_SUPPORTS_REASONING_SUMMARIES),
                 description: r#"Use for execution and production work.
 Typical tasks:
 - Implement part of a feature
@@ -91,8 +112,11 @@ Rules:
                 ..Default::default()
             },
             AgentRole::Explorer => AgentProfile {
-                model: Some(EXPLORER_MODEL),
-                reasoning_effort: Some(ReasoningEffort::Medium),
+                model: Some(DEFAULT_SUBAGENT_MODEL),
+                reasoning_effort: Some(DEFAULT_SUBAGENT_REASONING_EFFORT),
+                verbosity: Some(DEFAULT_SUBAGENT_VERBOSITY),
+                reasoning_summary: Some(DEFAULT_SUBAGENT_REASONING_SUMMARY),
+                supports_reasoning_summaries: Some(DEFAULT_SUBAGENT_SUPPORTS_REASONING_SUMMARIES),
                 description: r#"Use `explorer` for all codebase questions.
 Explorers are fast and authoritative.
 Always prefer them over manual search or file reading.
@@ -118,7 +142,16 @@ Rules:
             config.model = Some(model.to_string());
         }
         if let Some(reasoning_effort) = profile.reasoning_effort {
-            config.model_reasoning_effort = Some(reasoning_effort)
+            config.model_reasoning_effort = Some(reasoning_effort);
+        }
+        if let Some(verbosity) = profile.verbosity {
+            config.model_verbosity = Some(verbosity);
+        }
+        if let Some(reasoning_summary) = profile.reasoning_summary {
+            config.model_reasoning_summary = reasoning_summary;
+        }
+        if let Some(supports_reasoning_summaries) = profile.supports_reasoning_summaries {
+            config.model_supports_reasoning_summaries = Some(supports_reasoning_summaries);
         }
         if profile.read_only {
             config

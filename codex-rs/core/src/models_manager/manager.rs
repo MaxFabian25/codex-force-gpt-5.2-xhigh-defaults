@@ -30,6 +30,7 @@ use tracing::error;
 const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
+const PREFERRED_DEFAULT_MODEL: &str = "gpt-5.2";
 
 /// Strategy for refreshing available models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,6 +284,11 @@ impl ModelsManager {
         }
         if let Some(default) = merged_presets
             .iter_mut()
+            .find(|preset| preset.show_in_picker && preset.model == PREFERRED_DEFAULT_MODEL)
+        {
+            default.is_default = true;
+        } else if let Some(default) = merged_presets
+            .iter_mut()
             .find(|preset| preset.show_in_picker)
         {
             default.is_default = true;
@@ -337,7 +343,8 @@ impl ModelsManager {
         let presets = builtin_model_presets(None);
         presets
             .iter()
-            .find(|preset| preset.show_in_picker)
+            .find(|preset| preset.show_in_picker && preset.model == PREFERRED_DEFAULT_MODEL)
+            .or_else(|| presets.iter().find(|preset| preset.show_in_picker))
             .or_else(|| presets.first())
             .map(|preset| preset.model.clone())
             .unwrap_or_default()
