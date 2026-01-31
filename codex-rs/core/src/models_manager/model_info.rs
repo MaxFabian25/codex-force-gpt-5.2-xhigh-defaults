@@ -79,6 +79,10 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries {
         model.supports_reasoning_summaries = supports_reasoning_summaries;
     }
+    if model.slug.starts_with("gpt-5.2") && !model.slug.contains("codex") {
+        model.default_reasoning_level = Some(ReasoningEffort::XHigh);
+        model.default_verbosity = Some(Verbosity::High);
+    }
     if let Some(context_window) = config.model_context_window {
         model.context_window = Some(context_window);
     }
@@ -276,9 +280,9 @@ pub(crate) fn find_model_info_for_slug(slug: &str) -> ModelInfo {
             apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
             supports_reasoning_summaries: true,
             support_verbosity: true,
-            default_verbosity: Some(Verbosity::Low),
+            default_verbosity: Some(Verbosity::High),
             base_instructions: GPT_5_2_INSTRUCTIONS.to_string(),
-            default_reasoning_level: Some(ReasoningEffort::Medium),
+            default_reasoning_level: Some(ReasoningEffort::XHigh),
             truncation_policy: TruncationPolicyConfig::bytes(10_000),
             shell_type: ConfigShellToolType::ShellCommand,
             supports_parallel_tool_calls: true,

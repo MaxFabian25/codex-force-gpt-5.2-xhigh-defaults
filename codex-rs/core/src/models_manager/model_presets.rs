@@ -13,6 +13,39 @@ pub const HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG: &str =
 static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
     vec![
         ModelPreset {
+            id: "gpt-5.2".to_string(),
+            model: "gpt-5.2".to_string(),
+            display_name: "gpt-5.2".to_string(),
+            description: "Latest frontier model with improvements across knowledge, reasoning and coding"
+                .to_string(),
+            default_reasoning_effort: ReasoningEffort::XHigh,
+            supported_reasoning_efforts: vec![
+                ReasoningEffortPreset {
+                    effort: ReasoningEffort::Low,
+                    description: "Balances speed with some reasoning; useful for straightforward queries and short explanations"
+                        .to_string(),
+                },
+                ReasoningEffortPreset {
+                    effort: ReasoningEffort::Medium,
+                    description: "Provides a solid balance of reasoning depth and latency for general-purpose tasks"
+                        .to_string(),
+                },
+                ReasoningEffortPreset {
+                    effort: ReasoningEffort::High,
+                    description: "Maximizes reasoning depth for complex or ambiguous problems".to_string(),
+                },
+                ReasoningEffortPreset {
+                    effort: ReasoningEffort::XHigh,
+                    description: "Extra high reasoning for complex problems".to_string(),
+                },
+            ],
+            supports_personality: false,
+            is_default: true,
+            upgrade: None,
+            show_in_picker: true,
+            supported_in_api: true,
+        },
+        ModelPreset {
             id: "gpt-5.2-codex".to_string(),
             model: "gpt-5.2-codex".to_string(),
             display_name: "gpt-5.2-codex".to_string(),
@@ -36,8 +69,8 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
                     description: "Extra high reasoning depth for complex problems".to_string(),
                 },
             ],
-            supports_personality: true,
-            is_default: true,
+            supports_personality: false,
+            is_default: false,
             upgrade: None,
             show_in_picker: true,
             supported_in_api: true,
@@ -87,36 +120,6 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
                     effort: ReasoningEffort::High,
                     description: "Maximizes reasoning depth for complex or ambiguous problems"
                         .to_string(),
-                },
-            ],
-            supports_personality: false,
-            is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
-            show_in_picker: true,
-            supported_in_api: true,
-        },
-        ModelPreset {
-            id: "gpt-5.2".to_string(),
-            model: "gpt-5.2".to_string(),
-            display_name: "gpt-5.2".to_string(),
-            description: "Latest frontier model with improvements across knowledge, reasoning and coding".to_string(),
-            default_reasoning_effort: ReasoningEffort::Medium,
-            supported_reasoning_efforts: vec![
-                ReasoningEffortPreset {
-                    effort: ReasoningEffort::Low,
-                    description: "Balances speed with some reasoning; useful for straightforward queries and short explanations".to_string(),
-                },
-                ReasoningEffortPreset {
-                    effort: ReasoningEffort::Medium,
-                    description: "Provides a solid balance of reasoning depth and latency for general-purpose tasks".to_string(),
-                },
-                ReasoningEffortPreset {
-                    effort: ReasoningEffort::High,
-                    description: "Maximizes reasoning depth for complex or ambiguous problems".to_string(),
-                },
-                ReasoningEffortPreset {
-                    effort: ReasoningEffort::XHigh,
-                    description: "Extra high reasoning depth for complex problems".to_string(),
                 },
             ],
             supports_personality: false,

@@ -51,8 +51,8 @@ async fn list_models_returns_chatgpt_models() -> Result<()> {
 
 fn expected_models_for_api_key() -> Vec<ModelPreset> {
     vec![
-        gpt_52_codex(),
         gpt_5_2(),
+        gpt_52_codex(),
         gpt_5_1_codex_max(),
         gpt_5_1_codex(),
         gpt_5_1_codex_mini(),
@@ -95,7 +95,7 @@ fn gpt_52_codex() -> ModelPreset {
             ),
         ],
         supports_personality: false,
-        is_default: true,
+        is_default: false,
         upgrade: None,
         show_in_picker: true,
         supported_in_api: true,
@@ -188,7 +188,7 @@ fn gpt_5_2() -> ModelPreset {
         description:
             "Latest frontier model with improvements across knowledge, reasoning and coding"
                 .to_string(),
-        default_reasoning_effort: ReasoningEffort::Medium,
+        default_reasoning_effort: ReasoningEffort::XHigh,
         supported_reasoning_efforts: vec![
             effort(
                 ReasoningEffort::Low,
@@ -208,18 +208,8 @@ fn gpt_5_2() -> ModelPreset {
             ),
         ],
         supports_personality: false,
-        is_default: false,
-        upgrade: Some(gpt52_codex_upgrade(
-            "gpt-5.2",
-            HashMap::from([
-                (ReasoningEffort::High, ReasoningEffort::High),
-                (ReasoningEffort::None, ReasoningEffort::Low),
-                (ReasoningEffort::Minimal, ReasoningEffort::Low),
-                (ReasoningEffort::Low, ReasoningEffort::Low),
-                (ReasoningEffort::Medium, ReasoningEffort::Medium),
-                (ReasoningEffort::XHigh, ReasoningEffort::XHigh),
-            ]),
-        )),
+        is_default: true,
+        upgrade: None,
         show_in_picker: true,
         supported_in_api: true,
     }
