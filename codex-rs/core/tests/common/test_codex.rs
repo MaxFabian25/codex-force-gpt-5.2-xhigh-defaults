@@ -208,6 +208,19 @@ impl TestCodexBuilder {
         };
         let cwd = Arc::new(TempDir::new()?);
         let mut config = load_default_config_for_test(home).await;
+        // Ensure shell command tests are hermetic and do not depend on a developer's
+        // local shell init files (e.g., `~/.zshenv`) emitting unexpected output.
+        // We achieve this by forcing `$HOME`/`$ZDOTDIR` for tool subprocesses to
+        // the test's temporary Codex home directory.
+        let shell_home = home.path().to_string_lossy().to_string();
+        config
+            .shell_environment_policy
+            .r#set
+            .insert("HOME".to_string(), shell_home.clone());
+        config
+            .shell_environment_policy
+            .r#set
+            .insert("ZDOTDIR".to_string(), shell_home);
         config.cwd = cwd.path().to_path_buf();
         config.model_provider = model_provider;
         for hook in self.pre_build_hooks.drain(..) {
