@@ -3,6 +3,8 @@ use chrono::Utc;
 use codex_core::models_manager::model_presets::all_model_presets;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::ModelInstructionsVariables;
+use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelVisibility;
 use codex_protocol::openai_models::TruncationPolicyConfig;
@@ -12,6 +14,18 @@ use std::path::Path;
 
 /// Convert a ModelPreset to ModelInfo for cache storage.
 fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
+    let model_messages = if preset.supports_personality {
+        Some(ModelMessages {
+            instructions_template: Some("{{ personality }}".to_string()),
+            instructions_variables: Some(ModelInstructionsVariables {
+                personality_default: Some(String::new()),
+                personality_friendly: Some(String::new()),
+                personality_pragmatic: Some(String::new()),
+            }),
+        })
+    } else {
+        None
+    };
     ModelInfo {
         slug: preset.id.clone(),
         display_name: preset.display_name.clone(),
@@ -28,7 +42,7 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
         priority,
         upgrade: preset.upgrade.as_ref().map(|u| u.into()),
         base_instructions: "base instructions".to_string(),
-        model_messages: None,
+        model_messages,
         supports_reasoning_summaries: false,
         support_verbosity: false,
         default_verbosity: None,

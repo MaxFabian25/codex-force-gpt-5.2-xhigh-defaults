@@ -418,7 +418,7 @@ mod tests {
                 "gpt-5.1-codex-max",
                 None,
                 Some(
-                    "Upgrade to gpt-5.2-codex for the latest and greatest agentic coding model."
+                    "Upgrade to gpt-5.3-codex for the latest and greatest agentic coding model."
                         .to_string(),
                 ),
                 None,

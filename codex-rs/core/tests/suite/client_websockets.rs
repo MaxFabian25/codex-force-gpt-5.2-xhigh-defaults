@@ -38,7 +38,7 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tracing_test::traced_test;
 
-const MODEL: &str = "gpt-5.2-codex";
+const MODEL: &str = "gpt-5.3-codex";
 
 struct WebsocketTestHarness {
     _codex_home: TempDir,

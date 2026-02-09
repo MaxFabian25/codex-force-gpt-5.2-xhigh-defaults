@@ -259,7 +259,7 @@ mod tests {
             "--last",
             "--json",
             "--model",
-            "gpt-5.2-codex",
+            "gpt-5.3-codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "--skip-git-repo-check",
             PROMPT,

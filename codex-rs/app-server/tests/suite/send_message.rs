@@ -318,7 +318,7 @@ async fn resume_with_model_mismatch_appends_model_switch_once() -> Result<()> {
             conversation_id: None,
             history: None,
             overrides: Some(NewConversationParams {
-                model: Some("gpt-5.2-codex".to_string()),
+                model: Some("gpt-5.3-codex".to_string()),
                 ..Default::default()
             }),
         })

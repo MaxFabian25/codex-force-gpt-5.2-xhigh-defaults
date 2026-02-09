@@ -49,10 +49,10 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
 
     let expected_models = vec![
         Model {
-            id: "gpt-5.2-codex".to_string(),
-            model: "gpt-5.2-codex".to_string(),
+            id: "gpt-5.3-codex".to_string(),
+            model: "gpt-5.3-codex".to_string(),
             upgrade: None,
-            display_name: "gpt-5.2-codex".to_string(),
+            display_name: "gpt-5.3-codex".to_string(),
             description: "Latest frontier agentic coding model.".to_string(),
             supported_reasoning_efforts: vec![
                 ReasoningEffortOption {
@@ -73,15 +73,15 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
                     description: "Extra high reasoning depth for complex problems".to_string(),
                 },
             ],
-            default_reasoning_effort: ReasoningEffort::Medium,
+            default_reasoning_effort: ReasoningEffort::XHigh,
             input_modalities: vec![InputModality::Text, InputModality::Image],
-            supports_personality: false,
+            supports_personality: true,
             is_default: true,
         },
         Model {
             id: "gpt-5.1-codex-max".to_string(),
             model: "gpt-5.1-codex-max".to_string(),
-            upgrade: Some("gpt-5.2-codex".to_string()),
+            upgrade: Some("gpt-5.3-codex".to_string()),
             display_name: "gpt-5.1-codex-max".to_string(),
             description: "Codex-optimized flagship for deep and fast reasoning.".to_string(),
             supported_reasoning_efforts: vec![
@@ -111,7 +111,7 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
         Model {
             id: "gpt-5.1-codex-mini".to_string(),
             model: "gpt-5.1-codex-mini".to_string(),
-            upgrade: Some("gpt-5.2-codex".to_string()),
+            upgrade: Some("gpt-5.3-codex".to_string()),
             display_name: "gpt-5.1-codex-mini".to_string(),
             description: "Optimized for codex. Cheaper, faster, but less capable.".to_string(),
             supported_reasoning_efforts: vec![
@@ -133,7 +133,7 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
         Model {
             id: "gpt-5.2".to_string(),
             model: "gpt-5.2".to_string(),
-            upgrade: Some("gpt-5.2-codex".to_string()),
+            upgrade: Some("gpt-5.3-codex".to_string()),
             display_name: "gpt-5.2".to_string(),
             description:
                 "Latest frontier model with improvements across knowledge, reasoning and coding"
@@ -200,7 +200,7 @@ async fn list_models_pagination_works() -> Result<()> {
     } = to_response::<ModelListResponse>(first_response)?;
 
     assert_eq!(first_items.len(), 1);
-    assert_eq!(first_items[0].id, "gpt-5.2-codex");
+    assert_eq!(first_items[0].id, "gpt-5.3-codex");
     let next_cursor = first_cursor.ok_or_else(|| anyhow!("cursor for second page"))?;
 
     let second_request = mcp

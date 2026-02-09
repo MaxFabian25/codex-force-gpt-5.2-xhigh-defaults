@@ -313,7 +313,7 @@ mod tests {
         let mode = CollaborationMode {
             mode: ModeKind::Default,
             settings: Settings {
-                model: "gpt-5.2-codex".to_string(),
+                model: "gpt-5.3-codex".to_string(),
                 reasoning_effort: Some(ReasoningEffort::High),
                 developer_instructions: Some("stay focused".to_string()),
             },
@@ -329,7 +329,7 @@ mod tests {
         let expected = CollaborationMode {
             mode: ModeKind::Default,
             settings: Settings {
-                model: "gpt-5.2-codex".to_string(),
+                model: "gpt-5.3-codex".to_string(),
                 reasoning_effort: None,
                 developer_instructions: None,
             },

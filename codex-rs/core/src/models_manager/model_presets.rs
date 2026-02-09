@@ -14,11 +14,11 @@ pub const HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG: &str =
 static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
     vec![
         ModelPreset {
-            id: "gpt-5.2-codex".to_string(),
-            model: "gpt-5.2-codex".to_string(),
-            display_name: "gpt-5.2-codex".to_string(),
+            id: "gpt-5.3-codex".to_string(),
+            model: "gpt-5.3-codex".to_string(),
+            display_name: "gpt-5.3-codex".to_string(),
             description: "Latest frontier agentic coding model.".to_string(),
-            default_reasoning_effort: ReasoningEffort::Medium,
+            default_reasoning_effort: ReasoningEffort::XHigh,
             supported_reasoning_efforts: vec![
                 ReasoningEffortPreset {
                     effort: ReasoningEffort::Low,
@@ -70,7 +70,7 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
             ],
             supports_personality: false,
             is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
+            upgrade: Some(gpt_53_codex_upgrade()),
             show_in_picker: true,
             supported_in_api: true,
             input_modalities: default_input_modalities(),
@@ -94,7 +94,7 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
             ],
             supports_personality: false,
             is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
+            upgrade: Some(gpt_53_codex_upgrade()),
             show_in_picker: true,
             supported_in_api: true,
             input_modalities: default_input_modalities(),
@@ -125,7 +125,7 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
             ],
             supports_personality: false,
             is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
+            upgrade: Some(gpt_53_codex_upgrade()),
             show_in_picker: true,
             supported_in_api: true,
             input_modalities: default_input_modalities(),
@@ -215,7 +215,7 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
             ],
             supports_personality: false,
             is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
+            upgrade: Some(gpt_53_codex_upgrade()),
             show_in_picker: false,
             supported_in_api: true,
             input_modalities: default_input_modalities(),
@@ -238,7 +238,7 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
             ],
             supports_personality: false,
             is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
+            upgrade: Some(gpt_53_codex_upgrade()),
             show_in_picker: false,
             supported_in_api: true,
             input_modalities: default_input_modalities(),
@@ -266,7 +266,7 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
             ],
             supports_personality: false,
             is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
+            upgrade: Some(gpt_53_codex_upgrade()),
             show_in_picker: false,
             supported_in_api: true,
             input_modalities: default_input_modalities(),
@@ -297,7 +297,7 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
             ],
             supports_personality: false,
             is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
+            upgrade: Some(gpt_53_codex_upgrade()),
             show_in_picker: false,
             supported_in_api: true,
             input_modalities: default_input_modalities(),
@@ -324,7 +324,7 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
             ],
             supports_personality: false,
             is_default: false,
-            upgrade: Some(gpt_52_codex_upgrade()),
+            upgrade: Some(gpt_53_codex_upgrade()),
             show_in_picker: false,
             supported_in_api: true,
             input_modalities: default_input_modalities(),
@@ -332,21 +332,21 @@ static PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
     ]
 });
 
-fn gpt_52_codex_upgrade() -> ModelUpgrade {
+fn gpt_53_codex_upgrade() -> ModelUpgrade {
     ModelUpgrade {
-        id: "gpt-5.2-codex".to_string(),
+        id: "gpt-5.3-codex".to_string(),
         reasoning_effort_mapping: None,
-        migration_config_key: "gpt-5.2-codex".to_string(),
-        model_link: Some("https://openai.com/index/introducing-gpt-5-2-codex".to_string()),
+        migration_config_key: "gpt-5.3-codex".to_string(),
+        model_link: Some("https://openai.com/index/introducing-gpt-5-3-codex".to_string()),
         upgrade_copy: Some(
-            "Codex is now powered by gpt-5.2-codex, our latest frontier agentic coding model. It is smarter and faster than its predecessors and capable of long-running project-scale work."
+            "Codex is now powered by gpt-5.3-codex, our latest frontier agentic coding model. It is smarter and faster than its predecessors and capable of long-running project-scale work."
                 .to_string(),
         ),
         migration_markdown: Some(
             indoc! {r#"
                 **Codex just got an upgrade. Introducing {model_to}.**
 
-                Codex is now powered by gpt-5.2-codex, our latest frontier agentic coding model. It is smarter and faster than its predecessors and capable of long-running project-scale work. Learn more about {model_to} at https://openai.com/index/introducing-gpt-5-2-codex
+                Codex is now powered by gpt-5.3-codex, our latest frontier agentic coding model. It is smarter and faster than its predecessors and capable of long-running project-scale work. Learn more about {model_to} at https://openai.com/index/introducing-gpt-5-3-codex
 
                 You can continue using {model_from} if you prefer.
             "#}
