@@ -250,3 +250,51 @@ fn normalize_zip_name(name: &str, prefix_candidates: &[String]) -> Option<String
         Some(trimmed.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::extract_zip_to_dir;
+    use std::io::Cursor;
+    use std::io::Write;
+    use tempfile::TempDir;
+    use zip::CompressionMethod;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    #[test]
+    fn extract_zip_to_dir_strips_prefix_and_writes_deflated_files() {
+        let tempdir = TempDir::new().unwrap_or_else(|error| panic!("{error}"));
+        let output_dir = tempdir.path();
+
+        let mut bytes = Cursor::new(Vec::new());
+        {
+            let mut zip = ZipWriter::new(&mut bytes);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zip.start_file("hazelnut-id/SKILL.md", options)
+                .unwrap_or_else(|error| panic!("{error}"));
+            zip.write_all(b"# skill\n")
+                .unwrap_or_else(|error| panic!("{error}"));
+            zip.start_file("hazelnut-id/docs/guide.txt", options)
+                .unwrap_or_else(|error| panic!("{error}"));
+            zip.write_all(b"guide\n")
+                .unwrap_or_else(|error| panic!("{error}"));
+            zip.finish().unwrap_or_else(|error| panic!("{error}"));
+        }
+
+        extract_zip_to_dir(bytes.into_inner(), output_dir, &["hazelnut-id".to_string()])
+            .unwrap_or_else(|error| panic!("{error}"));
+
+        assert_eq!(
+            std::fs::read_to_string(output_dir.join("SKILL.md"))
+                .unwrap_or_else(|error| panic!("{error}")),
+            "# skill\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(output_dir.join("docs").join("guide.txt"))
+                .unwrap_or_else(|error| panic!("{error}")),
+            "guide\n"
+        );
+        assert!(!output_dir.join("hazelnut-id").exists());
+    }
+}

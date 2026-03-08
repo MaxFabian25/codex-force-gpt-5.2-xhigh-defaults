@@ -37,8 +37,6 @@ use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::trace;
-use tungstenite::extensions::ExtensionsConfig;
-use tungstenite::extensions::compression::deflate::DeflateConfig;
 use tungstenite::protocol::WebSocketConfig;
 use url::Url;
 
@@ -387,12 +385,7 @@ async fn connect_websocket(
 }
 
 fn websocket_config() -> WebSocketConfig {
-    let mut extensions = ExtensionsConfig::default();
-    extensions.permessage_deflate = Some(DeflateConfig::default());
-
-    let mut config = WebSocketConfig::default();
-    config.extensions = extensions;
-    config
+    WebSocketConfig::default()
 }
 
 fn map_ws_error(err: WsError, url: &Url) -> ApiError {
@@ -627,9 +620,14 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn websocket_config_enables_permessage_deflate() {
+    fn websocket_config_uses_default_extensions() {
         let config = websocket_config();
-        assert!(config.extensions.permessage_deflate.is_some());
+        assert_eq!(config.read_buffer_size, 128 * 1024);
+        assert_eq!(config.write_buffer_size, 128 * 1024);
+        assert_eq!(config.max_write_buffer_size, usize::MAX);
+        assert_eq!(config.max_message_size, Some(64 << 20));
+        assert_eq!(config.max_frame_size, Some(16 << 20));
+        assert!(!config.accept_unmasked_frames);
     }
 
     #[test]
