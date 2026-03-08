@@ -1,5 +1,5 @@
-<p align="center"><code>npm i -g @openai/codex</code><br />or <code>brew install --cask codex</code></p>
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
+<p align="center"><code>git clone https://github.com/MaxFabian25/codex-force-gpt-5.4-xhigh-defaults.git</code><br /><code>cd codex-force-gpt-5.4-xhigh-defaults/codex-rs && cargo run --bin codex</code></p>
+<p align="center"><strong>Codex CLI</strong> is a maintained fork of the OpenAI Codex CLI that runs locally on your computer.
 <p align="center">
   <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
 </p>
@@ -12,41 +12,31 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 ## Fork defaults
 
-This fork sets `gpt-5.4` as the default model with reasoning `xhigh`, verbosity `high`, and reasoning summaries `detailed`.
+This fork tracks upstream stable `rust-v0.111.0` and hard-overrides the default model stack to `gpt-5.4` with reasoning `xhigh`, verbosity `high`, and reasoning summaries `detailed`.
+
+## Distribution model
+
+This repository does not publish a separate npm package, Homebrew cask, or fork-specific binary release stream.
+
+Installing `@openai/codex`, `brew install --cask codex`, or downloading upstream OpenAI releases gives you the upstream CLI and upstream defaults, not this fork.
+
+Use this fork when you want to build and run the forked source, inspect the exact override in GitHub, or maintain the custom defaults remotely.
 
 ## Quickstart
 
-### Installing and running Codex CLI
+### Building and running this fork
 
-Install globally with your preferred package manager:
-
-```shell
-# Install using npm
-npm install -g @openai/codex
-```
+Clone the fork and run the Rust CLI directly from source:
 
 ```shell
-# Install using Homebrew
-brew install --cask codex
+git clone https://github.com/MaxFabian25/codex-force-gpt-5.4-xhigh-defaults.git
+cd codex-force-gpt-5.4-xhigh-defaults/codex-rs
+cargo run --bin codex
 ```
 
-Then simply run `codex` to get started.
+That path keeps the fork separate from any upstream npm/Homebrew install you already use.
 
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
-
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
-
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
-
-</details>
+For full system requirements and local build helpers, see [Installing & building](./docs/install.md).
 
 ### Using Codex with your ChatGPT plan
 

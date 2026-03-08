@@ -1,5 +1,8 @@
 ## Installing & building
 
+> [!IMPORTANT]
+> This fork does not publish a separate npm package, Homebrew cask, or GitHub release stream. If you install `@openai/codex`, `brew install --cask codex`, or download releases from `openai/codex`, you will get the upstream CLI and upstream defaults, not this fork.
+
 ### System requirements
 
 | Requirement                 | Details                                                         |
@@ -10,14 +13,14 @@
 
 ### DotSlash
 
-The GitHub Release also contains a [DotSlash](https://dotslash-cli.com/) file for the Codex CLI named `codex`. Using a DotSlash file makes it possible to make a lightweight commit to source control to ensure all contributors use the same version of an executable, regardless of what platform they use for development.
+This fork does not currently publish a DotSlash file because it does not publish a fork-specific GitHub release stream. If you need to pin this fork in source control, build it locally from this repository and distribute that executable through your own release process.
 
 ### Build from source
 
 ```bash
 # Clone the repository and navigate to the root of the Cargo workspace.
-git clone https://github.com/openai/codex.git
-cd codex/codex-rs
+git clone https://github.com/MaxFabian25/codex-force-gpt-5.4-xhigh-defaults.git
+cd codex-force-gpt-5.4-xhigh-defaults/codex-rs
 
 # Install the Rust toolchain, if necessary.
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y

@@ -1,17 +1,18 @@
 # Codex CLI (Rust Implementation)
 
-We provide Codex CLI as a standalone, native executable to ensure a zero-dependency install.
+This folder contains the Rust implementation of the maintained fork.
 
 ## Installing Codex
 
-Today, the easiest way to install Codex is via `npm`:
+This fork does not publish a separate npm package, Homebrew cask, or fork-specific release channel. Upstream install commands give you upstream Codex, not this fork.
+
+Build and run the fork from source:
 
 ```shell
-npm i -g @openai/codex
-codex
+git clone https://github.com/MaxFabian25/codex-force-gpt-5.4-xhigh-defaults.git
+cd codex-force-gpt-5.4-xhigh-defaults/codex-rs
+cargo run --bin codex
 ```
-
-You can also install via Homebrew (`brew install --cask codex`) or download a platform-specific release directly from our [GitHub Releases](https://github.com/openai/codex/releases).
 
 ## Documentation quickstart
 
