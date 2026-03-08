@@ -1,13 +1,17 @@
 # Security Policy
 
-Thank you for helping us keep Codex secure!
+Thank you for helping keep this fork secure.
 
 ## Reporting Security Issues
 
-The security is essential to OpenAI's mission. We appreciate the work of security researchers acting in good faith to identify and responsibly report potential vulnerabilities, helping us maintain strong privacy and security standards for our users and technology.
+This repository is a maintained fork of OpenAI Codex. Please do not report security-sensitive issues publicly.
 
-Our security program is managed through Bugcrowd, and we ask that any validated vulnerabilities be reported via the [Bugcrowd program](https://bugcrowd.com/engagements/openai).
+If the issue is specific to this fork's release packaging, default overrides, or other fork-only behavior, contact the maintainer privately through GitHub before disclosure.
 
-## Vulnerability Disclosure Program
+If the issue appears to affect upstream OpenAI Codex rather than the fork-specific delta, follow the upstream OpenAI security process instead of opening a public issue here.
 
-Our Vulnerability Program Guidelines are defined on our [Bugcrowd program page](https://bugcrowd.com/engagements/openai).
+## Upstream Security Program
+
+OpenAI manages the upstream Codex vulnerability program through Bugcrowd:
+
+- [OpenAI Bugcrowd program](https://bugcrowd.com/engagements/openai)

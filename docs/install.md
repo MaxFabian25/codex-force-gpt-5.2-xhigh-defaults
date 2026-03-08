@@ -1,7 +1,7 @@
 ## Installing & building
 
 > [!IMPORTANT]
-> This fork does not publish a separate npm package, Homebrew cask, or GitHub release stream. If you install `@openai/codex`, `brew install --cask codex`, or download releases from `openai/codex`, you will get the upstream CLI and upstream defaults, not this fork.
+> This fork publishes fork-specific GitHub releases, but it does not publish a separate npm package or Homebrew cask. If you install `@openai/codex`, `brew install --cask codex`, or download releases from `openai/codex`, you will get the upstream CLI and upstream defaults, not this fork.
 
 ### System requirements
 
@@ -13,7 +13,7 @@
 
 ### DotSlash
 
-This fork does not currently publish a DotSlash file because it does not publish a fork-specific GitHub release stream. If you need to pin this fork in source control, build it locally from this repository and distribute that executable through your own release process.
+This fork does not currently publish a DotSlash file. If you need to pin this fork in source control, build it locally from this repository and distribute that executable through your own release process.
 
 ### Build from source
 
@@ -51,6 +51,8 @@ just test
 # If you specifically want full feature coverage, use:
 cargo test --all-features
 ```
+
+Tagged fork states are also published on the [GitHub Releases page](https://github.com/MaxFabian25/codex-force-gpt-5.4-xhigh-defaults/releases), but the supported execution path for this fork is still to build from source.
 
 ## Tracing / verbose logging
 

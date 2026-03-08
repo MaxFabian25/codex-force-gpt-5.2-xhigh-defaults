@@ -4,7 +4,7 @@ This folder contains the Rust implementation of the maintained fork.
 
 ## Installing Codex
 
-This fork does not publish a separate npm package, Homebrew cask, or fork-specific release channel. Upstream install commands give you upstream Codex, not this fork.
+This fork publishes fork-specific GitHub releases, but it does not publish a separate npm package or Homebrew cask. Upstream install commands give you upstream Codex, not this fork.
 
 Build and run the fork from source:
 
@@ -13,6 +13,8 @@ git clone https://github.com/MaxFabian25/codex-force-gpt-5.4-xhigh-defaults.git
 cd codex-force-gpt-5.4-xhigh-defaults/codex-rs
 cargo run --bin codex
 ```
+
+If you only need the tagged source state and release notes, see the [fork releases](https://github.com/MaxFabian25/codex-force-gpt-5.4-xhigh-defaults/releases).
 
 ## Documentation quickstart
 

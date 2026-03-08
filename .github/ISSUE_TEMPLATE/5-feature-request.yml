@@ -1,5 +1,5 @@
 name: 🎁 Feature Request
-description: Propose a new feature for Codex
+description: Propose a new feature for this fork
 labels:
   - enhancement
 body:
@@ -10,13 +10,13 @@ body:
 
         Before you submit a feature:
         1. Search existing issues for similar features. If you find one, 👍 it rather than opening a new one.
-        2. The Codex team will try to balance the varying needs of the community when prioritizing or rejecting new features. Not all features will be accepted. See [Contributing](https://github.com/openai/codex#contributing) for more details.
+        2. This fork intentionally keeps a narrow scope. Requests that are not about fork defaults, release packaging, or small maintainable deltas from upstream may be declined. See [Contributing](https://github.com/MaxFabian25/codex-force-gpt-5.4-xhigh-defaults/blob/codex-force-gpt-5.4-xhigh-defaults/docs/contributing.md) for more details.
 
   - type: input
     id: variant
     attributes:
       label: What variant of Codex are you using?
-      description: (e.g., App, IDE Extension, CLI, Web)
+      description: (e.g., Fork CLI from source, fork GitHub release, upstream CLI for comparison)
     validations:
       required: true
   - type: textarea

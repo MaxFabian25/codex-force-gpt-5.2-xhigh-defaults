@@ -1,5 +1,5 @@
 name: 💻 CLI Bug
-description: Report an issue in the Codex CLI
+description: Report an issue in this fork's CLI behavior or defaults
 labels:
   - bug
   - needs triage
@@ -10,7 +10,7 @@ body:
         Before submitting a new issue, please search for existing issues to see if your issue has already been reported.
         If it has, please add a 👍 reaction (no need to leave a comment) to the existing issue instead of creating a new one.
 
-        Make sure you are running the [latest](https://npmjs.com/package/@openai/codex) version of Codex CLI. The bug you are experiencing may already have been fixed.
+        Make sure you are running the latest fork release or the current `codex-force-gpt-5.4-xhigh-defaults` branch tip. Upstream npm/Homebrew installs do not include this fork's defaults.
 
   - type: input
     id: version
@@ -29,7 +29,7 @@ body:
     id: model
     attributes:
       label: Which model were you using?
-      description: Like `gpt-5.2`, `gpt-5.2-codex`, etc.
+      description: Like `gpt-5.4`, `gpt-5.4-codex`, etc.
   - type: input
     id: platform
     attributes:
@@ -55,7 +55,7 @@ body:
     id: steps
     attributes:
       label: What steps can reproduce the bug?
-      description: Explain the bug and provide a code snippet that can reproduce it. Please include thread id if applicable.
+      description: Explain the bug and provide a code snippet that can reproduce it. Please include release tag or commit SHA if applicable.
     validations:
       required: true
   - type: textarea
@@ -67,4 +67,4 @@ body:
     id: notes
     attributes:
       label: Additional information
-      description: Is there anything else you think we should know?
+      description: Include whether you built from source or used a fork release.
