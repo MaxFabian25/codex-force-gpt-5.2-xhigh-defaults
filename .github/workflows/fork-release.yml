@@ -1,0 +1,84 @@
+name: fork-release
+
+on:
+  push:
+    tags:
+      - "fork-v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'MaxFabian25/codex-force-gpt-5.4-xhigh-defaults'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate fork tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "${GITHUB_REF_TYPE}" == "tag" ]] \
+            || { echo "Not a tag push"; exit 1; }
+          [[ "${GITHUB_REF_NAME}" =~ ^fork-v[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.-]+)*$ ]] \
+            || { echo "Tag '${GITHUB_REF_NAME}' does not match fork release format"; exit 1; }
+
+      - name: Generate fork release notes and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(grep -m1 '^version' codex-rs/Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
+          commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          default_model="$(jq -r '.models[] | select(.priority == 0) | .slug' codex-rs/core/models.json)"
+          default_reasoning="$(jq -r '.models[] | select(.priority == 0) | .default_reasoning_level' codex-rs/core/models.json)"
+          default_summary="$(jq -r '.models[] | select(.priority == 0) | .default_reasoning_summary' codex-rs/core/models.json)"
+          default_verbosity="$(jq -r '.models[] | select(.priority == 0) | .default_verbosity' codex-rs/core/models.json)"
+
+          mkdir -p dist
+
+          cat > dist/fork-release-notes.md <<EOF
+          This fork release was published from commit \`${commit}\`.
+
+          Included in this release:
+          - upstream Cargo workspace version \`${version}\`
+          - default model \`${default_model}\`
+          - reasoning effort \`${default_reasoning}\`
+          - reasoning summary \`${default_summary}\`
+          - verbosity \`${default_verbosity}\`
+
+          Distribution model:
+          - no fork-specific npm package
+          - no fork-specific Homebrew cask
+          - GitHub provides generated source archives for this tag
+          - supported execution path remains building the fork from source under \`codex-rs/\`
+          EOF
+
+          cat > dist/fork-release-metadata.json <<EOF
+          {
+            "tag": "${GITHUB_REF_NAME}",
+            "commit": "${commit}",
+            "cargo_version": "${version}",
+            "default_model": "${default_model}",
+            "default_reasoning_effort": "${default_reasoning}",
+            "default_reasoning_summary": "${default_summary}",
+            "default_verbosity": "${default_verbosity}"
+          }
+          EOF
+
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body_path: dist/fork-release-notes.md
+          files: dist/fork-release-metadata.json
+          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
