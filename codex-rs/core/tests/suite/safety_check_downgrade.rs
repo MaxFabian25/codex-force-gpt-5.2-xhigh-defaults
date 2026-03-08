@@ -22,7 +22,7 @@ use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 
 const SERVER_MODEL: &str = "gpt-5.2";
-const REQUESTED_MODEL: &str = "gpt-5.3-codex";
+const REQUESTED_MODEL: &str = "gpt-5.4";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn openai_model_header_mismatch_emits_warning_event_and_warning_item() -> Result<()> {

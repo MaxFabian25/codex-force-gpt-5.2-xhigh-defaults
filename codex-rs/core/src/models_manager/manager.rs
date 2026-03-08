@@ -207,7 +207,7 @@ impl ModelsManager {
         config: &Config,
     ) -> ModelInfo {
         // First use the normal longest-prefix match. If that misses, allow a narrowly scoped
-        // retry for namespaced slugs like `custom/gpt-5.3-codex`.
+        // retry for namespaced slugs like `custom/gpt-5.4`.
         let remote = Self::find_model_by_longest_prefix(model, candidates)
             .or_else(|| Self::find_model_by_namespaced_suffix(model, candidates));
         let model_info = if let Some(remote) = remote {

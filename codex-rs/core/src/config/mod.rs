@@ -2213,16 +2213,21 @@ impl Config {
                 .unwrap_or(false),
             model_reasoning_effort: config_profile
                 .model_reasoning_effort
-                .or(cfg.model_reasoning_effort),
+                .or(cfg.model_reasoning_effort)
+                .or(Some(ReasoningEffort::XHigh)),
             plan_mode_reasoning_effort: config_profile
                 .plan_mode_reasoning_effort
                 .or(cfg.plan_mode_reasoning_effort),
             model_reasoning_summary: config_profile
                 .model_reasoning_summary
-                .or(cfg.model_reasoning_summary),
+                .or(cfg.model_reasoning_summary)
+                .or(Some(ReasoningSummary::Detailed)),
             model_supports_reasoning_summaries: cfg.model_supports_reasoning_summaries,
             model_catalog,
-            model_verbosity: config_profile.model_verbosity.or(cfg.model_verbosity),
+            model_verbosity: config_profile
+                .model_verbosity
+                .or(cfg.model_verbosity)
+                .or(Some(Verbosity::High)),
             chatgpt_base_url: config_profile
                 .chatgpt_base_url
                 .or(cfg.chatgpt_base_url)
@@ -5233,7 +5238,7 @@ model_verbosity = "high"
                 model_reasoning_summary: Some(ReasoningSummary::Detailed),
                 model_supports_reasoning_summaries: None,
                 model_catalog: None,
-                model_verbosity: None,
+                model_verbosity: Some(Verbosity::High),
                 personality: Some(Personality::Pragmatic),
                 chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
                 realtime_audio: RealtimeAudioConfig::default(),
@@ -5358,12 +5363,12 @@ model_verbosity = "high"
             zsh_path: None,
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
-            model_reasoning_effort: None,
+            model_reasoning_effort: Some(ReasoningEffort::XHigh),
             plan_mode_reasoning_effort: None,
-            model_reasoning_summary: None,
+            model_reasoning_summary: Some(ReasoningSummary::Detailed),
             model_supports_reasoning_summaries: None,
             model_catalog: None,
-            model_verbosity: None,
+            model_verbosity: Some(Verbosity::High),
             personality: Some(Personality::Pragmatic),
             chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
             realtime_audio: RealtimeAudioConfig::default(),
@@ -5486,12 +5491,12 @@ model_verbosity = "high"
             zsh_path: None,
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
-            model_reasoning_effort: None,
+            model_reasoning_effort: Some(ReasoningEffort::XHigh),
             plan_mode_reasoning_effort: None,
-            model_reasoning_summary: None,
+            model_reasoning_summary: Some(ReasoningSummary::Detailed),
             model_supports_reasoning_summaries: None,
             model_catalog: None,
-            model_verbosity: None,
+            model_verbosity: Some(Verbosity::High),
             personality: Some(Personality::Pragmatic),
             chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
             realtime_audio: RealtimeAudioConfig::default(),

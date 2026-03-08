@@ -338,7 +338,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "No role requiring it for now"]
     async fn apply_explorer_role_sets_model_and_adds_session_flags_layer() {
         let (_home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
         let before_layers = session_flags_layer_count(&config);
@@ -347,8 +346,8 @@ mod tests {
             .await
             .expect("explorer role should apply");
 
-        assert_eq!(config.model.as_deref(), Some("gpt-5.1-codex-mini"));
-        assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::Medium));
+        assert_eq!(config.model.as_deref(), Some("gpt-5.4"));
+        assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::XHigh));
         assert_eq!(session_flags_layer_count(&config), before_layers + 1);
     }
 

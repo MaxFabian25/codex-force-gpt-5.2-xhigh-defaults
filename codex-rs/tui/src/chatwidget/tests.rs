@@ -5139,7 +5139,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
 
 #[tokio::test]
 async fn mode_switch_surfaces_reasoning_change_notification_when_model_stays_same() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.set_feature_enabled(Feature::CollaborationModes, true);
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
 
@@ -5153,7 +5153,7 @@ async fn mode_switch_surfaces_reasoning_change_notification_when_model_stays_sam
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("Model changed to gpt-5.3-codex medium for Plan mode."),
+        plan_messages.contains("Model changed to gpt-5.4 medium for Plan mode."),
         "expected reasoning-change notice in Plan mode, got: {plan_messages:?}"
     );
 }
@@ -7405,7 +7405,7 @@ async fn disabled_slash_command_while_task_running_snapshot() {
 
 #[tokio::test]
 async fn fast_slash_command_updates_and_persists_local_service_tier() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.set_feature_enabled(Feature::FastMode, true);
 
     chat.dispatch_command(SlashCommand::Fast);
@@ -7436,7 +7436,7 @@ async fn fast_slash_command_updates_and_persists_local_service_tier() {
 
 #[tokio::test]
 async fn user_turn_carries_service_tier_after_fast_toggle() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());
     set_chatgpt_auth(&mut chat);
     chat.set_feature_enabled(Feature::FastMode, true);
@@ -7460,7 +7460,7 @@ async fn user_turn_carries_service_tier_after_fast_toggle() {
 
 #[tokio::test]
 async fn fast_status_indicator_requires_chatgpt_auth() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.set_service_tier(Some(ServiceTier::Fast));
 
     assert!(!chat.should_show_fast_status(chat.current_service_tier()));
@@ -7472,7 +7472,7 @@ async fn fast_status_indicator_requires_chatgpt_auth() {
 
 #[tokio::test]
 async fn fast_status_indicator_is_hidden_when_fast_mode_is_off() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     set_chatgpt_auth(&mut chat);
 
     assert!(!chat.should_show_fast_status(chat.current_service_tier()));

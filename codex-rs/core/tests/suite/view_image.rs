@@ -296,14 +296,12 @@ async fn view_image_tool_can_preserve_original_resolution_on_gpt5_3_codex() -> a
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex()
-        .with_model("gpt-5.3-codex")
-        .with_config(|config| {
-            config
-                .features
-                .enable(Feature::ImageDetailOriginal)
-                .expect("test config should allow feature update");
-        });
+    let mut builder = test_codex().with_model("gpt-5.4").with_config(|config| {
+        config
+            .features
+            .enable(Feature::ImageDetailOriginal)
+            .expect("test config should allow feature update");
+    });
     let TestCodex {
         codex,
         cwd,

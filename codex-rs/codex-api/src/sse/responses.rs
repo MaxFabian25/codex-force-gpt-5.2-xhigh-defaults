@@ -1014,5 +1014,5 @@ mod tests {
         assert_eq!(delay, Some(Duration::from_secs(35)));
     }
 
-    const CYBER_RESTRICTED_MODEL_FOR_TESTS: &str = "gpt-5.3-codex";
+    const CYBER_RESTRICTED_MODEL_FOR_TESTS: &str = "gpt-5.4";
 }

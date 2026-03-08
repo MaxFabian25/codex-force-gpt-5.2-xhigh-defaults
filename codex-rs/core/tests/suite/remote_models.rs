@@ -66,7 +66,7 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
         TruncationPolicyConfig::bytes(10_000),
     );
     let specific = test_remote_model_with_policy(
-        "gpt-5.3-codex",
+        "gpt-5.4",
         ModelVisibility::List,
         1_000,
         TruncationPolicyConfig::bytes(10_000),
@@ -105,9 +105,9 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
 
     manager.list_models(RefreshStrategy::OnlineIfUncached).await;
 
-    let model_info = manager.get_model_info("gpt-5.3-codex-test", &config).await;
+    let model_info = manager.get_model_info("gpt-5.4-test", &config).await;
 
-    assert_eq!(model_info.slug, "gpt-5.3-codex-test");
+    assert_eq!(model_info.slug, "gpt-5.4-test");
     assert_eq!(model_info.base_instructions, specific.base_instructions);
 
     Ok(())
@@ -119,8 +119,8 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
     skip_if_sandbox!(Ok(()));
 
     let server = MockServer::start().await;
-    let requested_model = "gpt-5.3-codex-test";
-    let prefix_model = "gpt-5.3-codex";
+    let requested_model = "gpt-5.4-test";
+    let prefix_model = "gpt-5.4";
     let mut remote_model = test_remote_model_with_policy(
         prefix_model,
         ModelVisibility::List,

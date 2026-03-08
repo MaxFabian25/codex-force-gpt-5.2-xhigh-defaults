@@ -658,7 +658,7 @@ mod tests {
         let notification = ServerNotification::ModelRerouted(ModelReroutedNotification {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
-            from_model: "gpt-5.3-codex".to_string(),
+            from_model: "gpt-5.4".to_string(),
             to_model: "gpt-5.2".to_string(),
             reason: ModelRerouteReason::HighRiskCyberActivity,
         });
@@ -670,7 +670,7 @@ mod tests {
                 "params": {
                     "threadId": "thread-1",
                     "turnId": "turn-1",
-                    "fromModel": "gpt-5.3-codex",
+                    "fromModel": "gpt-5.4",
                     "toModel": "gpt-5.2",
                     "reason": "highRiskCyberActivity",
                 },

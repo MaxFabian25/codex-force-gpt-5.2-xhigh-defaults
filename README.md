@@ -10,6 +10,10 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 ---
 
+## Fork defaults
+
+This fork sets `gpt-5.4` as the default model with reasoning `xhigh`, verbosity `high`, and reasoning summaries `detailed`.
+
 ## Quickstart
 
 ### Installing and running Codex CLI

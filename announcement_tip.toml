@@ -17,7 +17,7 @@ version_regex = "^0\\.0\\.0$"
 to_date = "2026-05-10"
 
 [[announcements]]
-content = "**BREAKING NEWS**: `gpt-5.3-codex` is out! Upgrade to `0.98.0` for a faster, smarter, more steerable agent."
-from_date = "2026-02-01"
-to_date = "2026-02-16"
-version_regex = "^0\\.(?:[0-9]|[1-8][0-9]|9[0-7])\\."
+content = "**BREAKING NEWS**: `gpt-5.4` is out! Upgrade to `0.111.0` for the latest stable faster, smarter, more steerable agent."
+from_date = "2026-03-05"
+to_date = "2026-03-20"
+version_regex = "^0\\.(?:[0-9]|10[0-9]|11[01])\\."

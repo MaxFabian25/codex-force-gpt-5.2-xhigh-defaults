@@ -32,7 +32,7 @@ fn plan_preset() -> CollaborationModeMask {
         name: ModeKind::Plan.display_name().to_string(),
         mode: Some(ModeKind::Plan),
         model: None,
-        reasoning_effort: Some(Some(ReasoningEffort::Medium)),
+        reasoning_effort: Some(Some(ReasoningEffort::XHigh)),
         developer_instructions: Some(Some(COLLABORATION_MODE_PLAN.to_string())),
     }
 }
@@ -116,7 +116,7 @@ mod tests {
         );
         assert_eq!(
             plan_preset().reasoning_effort,
-            Some(Some(ReasoningEffort::Medium))
+            Some(Some(ReasoningEffort::XHigh))
         );
     }
 
