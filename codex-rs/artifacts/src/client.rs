@@ -14,6 +14,151 @@ use tokio::time::timeout;
 use url::Url;
 
 const DEFAULT_EXECUTION_TIMEOUT: Duration = Duration::from_secs(30);
+const ARTIFACT_RUNTIME_PRELUDE: &str = r#"globalThis.artifactTool = artifactTool;
+for (const [name, value] of Object.entries(artifactTool)) {
+  if (name === "default" || Object.prototype.hasOwnProperty.call(globalThis, name)) {
+    continue;
+  }
+  globalThis[name] = value;
+}
+
+const __codexCloneArtifactProto =
+  typeof globalThis.structuredClone === "function"
+    ? (value) => globalThis.structuredClone(value)
+    : (value) => JSON.parse(JSON.stringify(value));
+
+async function __codexInstallPresentationLayoutFallbacks() {
+  const Presentation = artifactTool.Presentation;
+  const Slide = artifactTool.Slide;
+  if (!Presentation || !Slide || Slide.prototype.__codexLayoutFallbackInstalled) {
+    return;
+  }
+
+  const wrapPlaceholderProtos = (protos) => ({
+    getAll() {
+      return protos.map((proto) => ({
+        toProto() {
+          return __codexCloneArtifactProto(proto);
+        },
+      }));
+    },
+  });
+
+  const scratchPresentation = await Presentation.create();
+  const titleSlideProtos = scratchPresentation
+    .slides
+    .add()
+    .placeholders
+    .getAll()
+    .map((placeholder) => __codexCloneArtifactProto(placeholder.toProto()));
+
+  const builtinLayouts = [
+    {
+      id: "codex-layout-blank",
+      name: "Blank",
+      placeholders: wrapPlaceholderProtos([]),
+    },
+    {
+      id: "codex-layout-title-slide",
+      name: "Title Slide",
+      placeholders: wrapPlaceholderProtos(titleSlideProtos),
+    },
+  ];
+
+  const normalizeLayoutName = (value) =>
+    String(value)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const builtinLayoutsByName = new Map();
+  const registerBuiltinLayout = (layout, aliases = []) => {
+    for (const alias of [layout.id, layout.name, ...aliases]) {
+      builtinLayoutsByName.set(normalizeLayoutName(alias), layout);
+    }
+  };
+  registerBuiltinLayout(builtinLayouts[0], ["blank", "empty"]);
+  registerBuiltinLayout(builtinLayouts[1], [
+    "title slide",
+    "title",
+    "cover",
+    "default",
+  ]);
+
+  const resolveBuiltinLayout = (value) => {
+    if (!value) {
+      return undefined;
+    }
+    if (
+      typeof value === "object" &&
+      value.placeholders &&
+      typeof value.placeholders.getAll === "function"
+    ) {
+      return value;
+    }
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    return builtinLayoutsByName.get(normalizeLayoutName(value));
+  };
+
+  const emptyCollection = {
+    getAll() {
+      return [];
+    },
+    getItem() {
+      return undefined;
+    },
+    getById() {
+      return undefined;
+    },
+  };
+
+  const builtinTemplateRegistry = {
+    layouts: {
+      getAll() {
+        return builtinLayouts.slice();
+      },
+      getItem(name) {
+        return resolveBuiltinLayout(name);
+      },
+      getById(name) {
+        return resolveBuiltinLayout(name);
+      },
+    },
+    masters: emptyCollection,
+    themes: emptyCollection,
+  };
+
+  const originalTemplate = Presentation.prototype.template;
+  Presentation.prototype.template = function (name) {
+    if (name == null) {
+      return builtinTemplateRegistry;
+    }
+
+    const builtinLayout = resolveBuiltinLayout(name);
+    if (builtinLayout) {
+      return builtinLayout;
+    }
+
+    return originalTemplate.call(this, name);
+  };
+
+  const originalSetLayout = Slide.prototype.setLayout;
+  Slide.prototype.setLayout = function (layout) {
+    const resolvedLayout = resolveBuiltinLayout(layout) ?? layout;
+    return originalSetLayout.call(this, resolvedLayout);
+  };
+
+  Object.defineProperty(Slide.prototype, "__codexLayoutFallbackInstalled", {
+    value: true,
+    configurable: true,
+  });
+}
+
+await __codexInstallPresentationLayoutFallbacks();
+"#;
 
 /// Executes artifact build commands against a resolved runtime.
 #[derive(Clone, Debug)]
@@ -147,16 +292,7 @@ fn build_wrapped_script(build_entrypoint_url: &Url, source: &str) -> String {
         }),
     );
     wrapped.push_str(");\n");
-    wrapped.push_str(
-        r#"globalThis.artifactTool = artifactTool;
-for (const [name, value] of Object.entries(artifactTool)) {
-  if (name === "default" || Object.prototype.hasOwnProperty.call(globalThis, name)) {
-    continue;
-  }
-  globalThis[name] = value;
-}
-"#,
-    );
+    wrapped.push_str(ARTIFACT_RUNTIME_PRELUDE);
     wrapped.push_str(source);
     wrapped.push('\n');
     wrapped

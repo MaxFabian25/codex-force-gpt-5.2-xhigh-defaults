@@ -3,11 +3,16 @@ use codex_artifacts::ArtifactBuildRequest;
 use codex_artifacts::ArtifactCommandOutput;
 use codex_artifacts::ArtifactRuntimeManager;
 use codex_artifacts::ArtifactRuntimeManagerConfig;
+use codex_artifacts::ArtifactRuntimePlatform;
+use codex_artifacts::ArtifactRuntimeReleaseLocator;
 use codex_artifacts::ArtifactsClient;
 use codex_artifacts::ArtifactsError;
+use codex_artifacts::InstalledArtifactRuntime;
 use serde_json::Value as JsonValue;
+use std::env;
 use std::time::Duration;
 use std::time::Instant;
+use url::Url;
 
 use crate::codex::Session;
 use crate::codex::TurnContext;
@@ -30,6 +35,10 @@ use codex_features::Feature;
 const ARTIFACTS_TOOL_NAME: &str = "artifacts";
 const ARTIFACT_TOOL_PRAGMA_PREFIX: &str = "// codex-artifact-tool:";
 const DEFAULT_EXECUTION_TIMEOUT: Duration = Duration::from_secs(30);
+const ARTIFACT_RUNTIME_ROOT_ENV: &str = "CODEX_ARTIFACT_RUNTIME_ROOT";
+const ARTIFACT_RUNTIME_CACHE_ROOT_ENV: &str = "CODEX_ARTIFACT_RUNTIME_CACHE_ROOT";
+const ARTIFACT_RUNTIME_RELEASE_BASE_URL_ENV: &str = "CODEX_ARTIFACT_RUNTIME_RELEASE_BASE_URL";
+const ARTIFACT_RUNTIME_VERSION_ENV: &str = "CODEX_ARTIFACT_RUNTIME_VERSION";
 
 pub struct ArtifactsHandler;
 
@@ -79,9 +88,7 @@ impl ToolHandler for ArtifactsHandler {
             }
         };
 
-        let client = ArtifactsClient::from_runtime_manager(default_runtime_manager(
-            turn.config.codex_home.clone(),
-        ));
+        let client = artifacts_client(turn.config.codex_home.clone())?;
 
         let started_at = Instant::now();
         emit_exec_begin(session.as_ref(), turn.as_ref(), &call_id).await;
@@ -211,11 +218,84 @@ fn parse_pragma_prefix(line: &str) -> Option<&str> {
     line.strip_prefix(ARTIFACT_TOOL_PRAGMA_PREFIX)
 }
 
+fn artifacts_client(codex_home: std::path::PathBuf) -> Result<ArtifactsClient, FunctionCallError> {
+    if let Some(runtime) = load_installed_runtime_from_env()? {
+        return Ok(ArtifactsClient::from_installed_runtime(runtime));
+    }
+
+    Ok(ArtifactsClient::from_runtime_manager(
+        runtime_manager_from_env(codex_home)?,
+    ))
+}
+
+fn runtime_manager_from_env(
+    codex_home: std::path::PathBuf,
+) -> Result<ArtifactRuntimeManager, FunctionCallError> {
+    let has_release_override = runtime_env_override(ARTIFACT_RUNTIME_RELEASE_BASE_URL_ENV)
+        .is_some()
+        || runtime_env_override(ARTIFACT_RUNTIME_VERSION_ENV).is_some()
+        || runtime_path_override(ARTIFACT_RUNTIME_CACHE_ROOT_ENV).is_some();
+
+    if !has_release_override {
+        return Ok(default_runtime_manager(codex_home));
+    }
+
+    let runtime_version = runtime_env_override(ARTIFACT_RUNTIME_VERSION_ENV)
+        .unwrap_or_else(|| versions::ARTIFACT_RUNTIME.to_string());
+    let release_base_url = match runtime_env_override(ARTIFACT_RUNTIME_RELEASE_BASE_URL_ENV) {
+        Some(value) => Url::parse(&value).map_err(|error| {
+            FunctionCallError::RespondToModel(format!(
+                "{ARTIFACT_RUNTIME_RELEASE_BASE_URL_ENV} must be a valid absolute URL; got `{value}` ({error})"
+            ))
+        })?,
+        None => Url::parse(codex_artifacts::DEFAULT_RELEASE_BASE_URL)
+            .unwrap_or_else(|error| panic!("default artifact runtime release URL must parse: {error}")),
+    };
+    let mut config = ArtifactRuntimeManagerConfig::new(
+        codex_home,
+        ArtifactRuntimeReleaseLocator::new(release_base_url, runtime_version),
+    );
+    if let Some(cache_root) = runtime_path_override(ARTIFACT_RUNTIME_CACHE_ROOT_ENV) {
+        config = config.with_cache_root(cache_root);
+    }
+    Ok(ArtifactRuntimeManager::new(config))
+}
+
 fn default_runtime_manager(codex_home: std::path::PathBuf) -> ArtifactRuntimeManager {
     ArtifactRuntimeManager::new(ArtifactRuntimeManagerConfig::with_default_release(
         codex_home,
         versions::ARTIFACT_RUNTIME,
     ))
+}
+
+fn load_installed_runtime_from_env() -> Result<Option<InstalledArtifactRuntime>, FunctionCallError>
+{
+    let Some(root_dir) = runtime_path_override(ARTIFACT_RUNTIME_ROOT_ENV) else {
+        return Ok(None);
+    };
+    let platform = ArtifactRuntimePlatform::detect_current().map_err(|error| {
+        FunctionCallError::RespondToModel(format!(
+            "failed to detect a supported platform for {ARTIFACT_RUNTIME_ROOT_ENV}: {error}"
+        ))
+    })?;
+    let runtime = InstalledArtifactRuntime::load(root_dir.clone(), platform).map_err(|error| {
+        FunctionCallError::RespondToModel(format!(
+            "failed to load the artifact runtime from {} set via {ARTIFACT_RUNTIME_ROOT_ENV}: {error}",
+            root_dir.display()
+        ))
+    })?;
+    Ok(Some(runtime))
+}
+
+fn runtime_env_override(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn runtime_path_override(key: &str) -> Option<std::path::PathBuf> {
+    runtime_env_override(key).map(std::path::PathBuf::from)
 }
 
 async fn emit_exec_begin(session: &Session, turn: &TurnContext, call_id: &str) {

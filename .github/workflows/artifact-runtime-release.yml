@@ -1,0 +1,107 @@
+name: artifact-runtime-release
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: GitHub Actions run ID containing artifact-runtime-<platform> payload artifacts.
+        required: true
+        type: string
+      publish:
+        description: Publish or update the GitHub release after staging assets.
+        required: true
+        default: false
+        type: boolean
+      node_version:
+        description: Optional Node.js version to record in the runtime manifest.
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  stage:
+    if: github.repository == 'openai/codex'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Download prebuilt runtime payloads
+        env:
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          platforms=(
+            darwin-arm64
+            darwin-x64
+            linux-arm64
+            linux-x64
+            windows-arm64
+            windows-x64
+          )
+          for platform in "${platforms[@]}"; do
+            mkdir -p "artifacts/${platform}"
+            gh run download "${BUILD_RUN_ID}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --name "artifact-runtime-${platform}" \
+              --dir "artifacts/${platform}"
+          done
+
+      - name: Stage artifact runtime release assets
+        env:
+          INPUT_NODE_VERSION: ${{ inputs.node_version }}
+        run: |
+          set -euo pipefail
+          node_args=()
+          if [[ -n "${INPUT_NODE_VERSION}" ]]; then
+            node_args+=(--node-version "${INPUT_NODE_VERSION}")
+          fi
+
+          python3 .github/scripts/stage_artifact_runtime_release.py \
+            --versions-file codex-rs/core/src/packages/versions.rs \
+            --output-dir dist/artifact-runtime \
+            --runtime-root darwin-arm64=artifacts/darwin-arm64 \
+            --runtime-root darwin-x64=artifacts/darwin-x64 \
+            --runtime-root linux-arm64=artifacts/linux-arm64 \
+            --runtime-root linux-x64=artifacts/linux-x64 \
+            --runtime-root windows-arm64=artifacts/windows-arm64 \
+            --runtime-root windows-x64=artifacts/windows-x64 \
+            "${node_args[@]}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: artifact-runtime-release-assets
+          path: dist/artifact-runtime/*
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runtime_version="$(python3 - <<'PY'
+from pathlib import Path
+import re
+
+contents = Path("codex-rs/core/src/packages/versions.rs").read_text(encoding="utf-8")
+match = re.search(r'ARTIFACT_RUNTIME:\s*&str\s*=\s*"([^"]+)"', contents)
+if not match:
+    raise SystemExit("failed to resolve ARTIFACT_RUNTIME")
+print(match.group(1))
+PY
+)"
+          tag="artifact-runtime-v${runtime_version}"
+          notes="Packaged @oai/artifact-tool runtime assets for Codex."
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" dist/artifact-runtime/* --clobber
+          else
+            gh release create "${tag}" dist/artifact-runtime/* --title "${tag}" --notes "${notes}"
+          fi

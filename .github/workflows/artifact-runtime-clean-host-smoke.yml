@@ -1,0 +1,107 @@
+name: artifact-runtime-clean-host-smoke
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: GitHub Actions run ID containing the x86_64-unknown-linux-gnu codex build artifact.
+        required: true
+        type: string
+      runtime_assets_run_id:
+        description: GitHub Actions run ID containing the artifact-runtime-release-assets artifact.
+        required: true
+        type: string
+      model:
+        description: Optional model override for codex exec.
+        required: false
+        default: gpt-5.4
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  smoke:
+    if: github.repository == 'openai/codex'
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Require OPENAI_API_KEY
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+            echo "OPENAI_API_KEY secret is required to run the clean-host artifacts smoke." >&2
+            exit 1
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Download codex build artifact
+        env:
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/codex
+          gh run download "${BUILD_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "x86_64-unknown-linux-gnu" \
+            --dir artifacts/codex
+
+      - name: Extract codex binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/codex
+          tar -xzf artifacts/codex/codex-x86_64-unknown-linux-gnu.tar.gz -C dist/codex
+          binary="$(find dist/codex -maxdepth 1 -type f -name 'codex-*' ! -name '*.sigstore' | head -n 1)"
+          if [[ -z "${binary}" ]]; then
+            echo "failed to locate extracted codex binary" >&2
+            exit 1
+          fi
+          chmod +x "${binary}"
+          echo "CODEX_BINARY=${binary}" >> "$GITHUB_ENV"
+
+      - name: Download staged runtime assets
+        env:
+          RUNTIME_ASSETS_RUN_ID: ${{ inputs.runtime_assets_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/runtime-assets
+          gh run download "${RUNTIME_ASSETS_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "artifact-runtime-release-assets" \
+            --dir artifacts/runtime-assets
+
+      - name: Run clean-host artifacts smoke
+        env:
+          INPUT_MODEL: ${{ inputs.model }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          model_args=()
+          if [[ -n "${INPUT_MODEL}" ]]; then
+            model_args+=(--model "${INPUT_MODEL}")
+          fi
+          python3 .github/scripts/run_artifact_runtime_clean_host_smoke.py \
+            --codex-binary "${CODEX_BINARY}" \
+            --runtime-release-root artifacts/runtime-assets \
+            --output-dir dist/artifact-runtime-clean-host-smoke \
+            --summary-path dist/artifact-runtime-clean-host-smoke/summary.json \
+            "${model_args[@]}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: artifact-runtime-clean-host-smoke
+          path: dist/artifact-runtime-clean-host-smoke/*
+          if-no-files-found: error

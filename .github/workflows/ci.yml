@@ -61,6 +61,8 @@ jobs:
         run: ./scripts/asciicheck.py codex-cli/README.md
       - name: Check codex-cli/README ToC
         run: python3 scripts/readme_toc.py codex-cli/README.md
+      - name: Run GitHub script unit tests
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
 
       - name: Prettier (run `pnpm run format:fix` to fix)
         run: pnpm run format

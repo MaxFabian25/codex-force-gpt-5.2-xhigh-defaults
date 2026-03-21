@@ -18,6 +18,7 @@ use sha2::Sha256;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Cursor;
+use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
@@ -28,6 +29,7 @@ use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
+use zip::ZipArchive;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
@@ -351,12 +353,416 @@ async fn artifacts_client_execute_build_writes_wrapped_script_and_env() {
     );
 }
 
+#[tokio::test]
+#[cfg(unix)]
+async fn artifacts_client_execute_build_installs_builtin_presentation_layouts() {
+    let temp = TempDir::new().unwrap_or_else(|error| panic!("{error}"));
+    let runtime_root = temp.path().join("runtime");
+    write_installed_runtime_with_source(
+        &runtime_root,
+        "2.5.6",
+        r#"class FakePlaceholder {
+  constructor(proto) {
+    this.proto = JSON.parse(JSON.stringify(proto));
+  }
+
+  toProto() {
+    return JSON.parse(JSON.stringify(this.proto));
+  }
+}
+
+class FakePlaceholderCollection {
+  constructor(initialProtos = []) {
+    this.protos = initialProtos.map((proto) => JSON.parse(JSON.stringify(proto)));
+  }
+
+  getAll() {
+    return this.protos.map((proto) => new FakePlaceholder(proto));
+  }
+}
+
+export class Slide {
+  constructor(defaultProtos = []) {
+    this.useLayoutId = null;
+    this.#setPlaceholders(defaultProtos);
+  }
+
+  #setPlaceholders(protos) {
+    this.placeholders = new FakePlaceholderCollection(protos);
+  }
+
+  setLayout(layout) {
+    this.useLayoutId = layout.id;
+    const protos = layout.placeholders.getAll().map((placeholder) => placeholder.toProto());
+    this.#setPlaceholders(protos);
+    return this;
+  }
+}
+
+class SlideCollection {
+  constructor(defaultProtos) {
+    this.defaultProtos = defaultProtos;
+  }
+
+  add() {
+    return new Slide(this.defaultProtos);
+  }
+}
+
+export class Presentation {
+  constructor() {
+    this.slides = new SlideCollection([
+      { id: "1", name: "Title 1", placeholderType: "ctrTitle" },
+      { id: "2", name: "Subtitle 2", placeholderType: "subTitle" },
+    ]);
+  }
+
+  static async create() {
+    return new Presentation();
+  }
+
+  template(name) {
+    throw new Error(`Unknown presentation template: ${name}`);
+  }
+}
+"#,
+    );
+    let runtime = crate::InstalledArtifactRuntime::load(
+        runtime_root,
+        ArtifactRuntimePlatform::detect_current().unwrap_or_else(|error| panic!("{error}")),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let client = ArtifactsClient::from_installed_runtime(runtime);
+
+    let output = client
+        .execute_build(ArtifactBuildRequest {
+            source: concat!(
+                "const presentation = await Presentation.create();\n",
+                "console.log(presentation.template().layouts.getAll().map((layout) => layout.name).join(','));\n",
+                "console.log(presentation.template('blank').id);\n",
+                "const slide = presentation.slides.add();\n",
+                "slide.setLayout('blank');\n",
+                "console.log(slide.useLayoutId);\n",
+                "console.log(slide.placeholders.getAll().length);\n",
+                "slide.setLayout('title slide');\n",
+                "console.log(slide.useLayoutId);\n",
+                "console.log(slide.placeholders.getAll().length);\n"
+            )
+            .to_string(),
+            cwd: temp.path().to_path_buf(),
+            timeout: Some(Duration::from_secs(5)),
+            env: BTreeMap::new(),
+        })
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+
+    assert_success(&output);
+    assert_eq!(
+        output.stdout.lines().collect::<Vec<_>>(),
+        vec![
+            "Blank,Title Slide",
+            "codex-layout-blank",
+            "codex-layout-blank",
+            "0",
+            "codex-layout-title-slide",
+            "2",
+        ]
+    );
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn artifacts_client_execute_build_exports_title_slide_pptx_smoke() {
+    let temp = TempDir::new().unwrap_or_else(|error| panic!("{error}"));
+    let runtime_root = temp.path().join("runtime");
+    write_installed_runtime_with_source(
+        &runtime_root,
+        "2.5.6",
+        r#"const fs = await import("node:fs/promises");
+
+class FakePlaceholder {
+  constructor(proto) {
+    this.proto = JSON.parse(JSON.stringify(proto));
+    this.text = proto.text ?? "";
+  }
+
+  toProto() {
+    return {
+      ...JSON.parse(JSON.stringify(this.proto)),
+      text: this.text,
+    };
+  }
+}
+
+class FakePlaceholderCollection {
+  constructor(initialProtos = []) {
+    this.replaceAll(initialProtos);
+  }
+
+  getAll() {
+    return this.placeholders;
+  }
+
+  replaceAll(protos) {
+    this.placeholders = protos.map((proto) => new FakePlaceholder(proto));
+  }
+}
+
+export class Slide {
+  constructor(defaultProtos = []) {
+    this.placeholders = new FakePlaceholderCollection(defaultProtos);
+    this.useLayoutId = null;
+  }
+
+  setLayout(layout) {
+    this.useLayoutId = layout.id;
+    const protos = layout.placeholders
+      .getAll()
+      .map((placeholder) => placeholder.toProto());
+    this.placeholders.replaceAll(protos);
+    return this;
+  }
+}
+
+class SlideCollection {
+  constructor(defaultProtos) {
+    this.defaultProtos = defaultProtos;
+    this.slides = [];
+  }
+
+  add() {
+    const slide = new Slide(this.defaultProtos);
+    this.slides.push(slide);
+    return slide;
+  }
+
+  getAll() {
+    return this.slides;
+  }
+}
+
+export class Presentation {
+  constructor() {
+    this.slides = new SlideCollection([
+      { id: "1", name: "Title 1", placeholderType: "ctrTitle", text: "" },
+      { id: "2", name: "Subtitle 2", placeholderType: "subTitle", text: "" },
+    ]);
+  }
+
+  static async create() {
+    return new Presentation();
+  }
+
+  template(name) {
+    throw new Error(`Unknown presentation template: ${name}`);
+  }
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let index = 0; index < 8; index += 1) {
+      const mask = -(crc & 1);
+      crc = (crc >>> 1) ^ (0xedb88320 & mask);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeU16(buffer, offset, value) {
+  buffer.writeUInt16LE(value & 0xffff, offset);
+}
+
+function writeU32(buffer, offset, value) {
+  buffer.writeUInt32LE(value >>> 0, offset);
+}
+
+function createStoredZip(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const nameBytes = Buffer.from(entry.name, "utf8");
+    const dataBytes = Buffer.isBuffer(entry.data)
+      ? entry.data
+      : Buffer.from(entry.data, "utf8");
+    const localHeader = Buffer.alloc(30 + nameBytes.length);
+    writeU32(localHeader, 0, 0x04034b50);
+    writeU16(localHeader, 4, 20);
+    writeU16(localHeader, 6, 0);
+    writeU16(localHeader, 8, 0);
+    writeU16(localHeader, 10, 0);
+    writeU16(localHeader, 12, 0);
+    writeU32(localHeader, 14, crc32(dataBytes));
+    writeU32(localHeader, 18, dataBytes.length);
+    writeU32(localHeader, 22, dataBytes.length);
+    writeU16(localHeader, 26, nameBytes.length);
+    writeU16(localHeader, 28, 0);
+    nameBytes.copy(localHeader, 30);
+    localParts.push(localHeader, dataBytes);
+
+    const centralHeader = Buffer.alloc(46 + nameBytes.length);
+    writeU32(centralHeader, 0, 0x02014b50);
+    writeU16(centralHeader, 4, 20);
+    writeU16(centralHeader, 6, 20);
+    writeU16(centralHeader, 8, 0);
+    writeU16(centralHeader, 10, 0);
+    writeU16(centralHeader, 12, 0);
+    writeU16(centralHeader, 14, 0);
+    writeU32(centralHeader, 16, crc32(dataBytes));
+    writeU32(centralHeader, 20, dataBytes.length);
+    writeU32(centralHeader, 24, dataBytes.length);
+    writeU16(centralHeader, 28, nameBytes.length);
+    writeU16(centralHeader, 30, 0);
+    writeU16(centralHeader, 32, 0);
+    writeU16(centralHeader, 34, 0);
+    writeU16(centralHeader, 36, 0);
+    writeU32(centralHeader, 38, 0);
+    writeU32(centralHeader, 42, offset);
+    nameBytes.copy(centralHeader, 46);
+    centralParts.push(centralHeader);
+
+    offset += localHeader.length + dataBytes.length;
+  }
+
+  const centralDirectory = Buffer.concat(centralParts);
+  const endOfCentralDirectory = Buffer.alloc(22);
+  writeU32(endOfCentralDirectory, 0, 0x06054b50);
+  writeU16(endOfCentralDirectory, 4, 0);
+  writeU16(endOfCentralDirectory, 6, 0);
+  writeU16(endOfCentralDirectory, 8, entries.length);
+  writeU16(endOfCentralDirectory, 10, entries.length);
+  writeU32(endOfCentralDirectory, 12, centralDirectory.length);
+  writeU32(endOfCentralDirectory, 16, offset);
+  writeU16(endOfCentralDirectory, 20, 0);
+
+  return Buffer.concat([...localParts, centralDirectory, endOfCentralDirectory]);
+}
+
+export class FileBlob {
+  constructor(bytes) {
+    this.bytes = bytes;
+  }
+
+  async save(path) {
+    await fs.writeFile(path, this.bytes);
+  }
+}
+
+export class PresentationFile {
+  static async exportPptx(presentation) {
+    const slide = presentation.slides.getAll()[0];
+    const placeholders = slide.placeholders.getAll();
+    const title = placeholders[0]?.text ?? "";
+    const subtitle = placeholders[1]?.text ?? "";
+    const slideXml = `<?xml version="1.0" encoding="utf-8"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp><p:txBody><a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:r><a:t>${escapeXml(title)}</a:t></a:r></a:p></p:txBody></p:sp>
+      <p:sp><p:txBody><a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:r><a:t>${escapeXml(subtitle)}</a:t></a:r></a:p></p:txBody></p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>`;
+    const bytes = createStoredZip([
+      {
+        name: "[Content_Types].xml",
+        data: `<?xml version="1.0" encoding="utf-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>`,
+      },
+      {
+        name: "_rels/.rels",
+        data: `<?xml version="1.0" encoding="utf-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>`,
+      },
+      {
+        name: "ppt/presentation.xml",
+        data: `<?xml version="1.0" encoding="utf-8"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>`,
+      },
+      {
+        name: "ppt/_rels/presentation.xml.rels",
+        data: `<?xml version="1.0" encoding="utf-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/></Relationships>`,
+      },
+      {
+        name: "ppt/slides/slide1.xml",
+        data: slideXml,
+      },
+    ]);
+    return new FileBlob(bytes);
+  }
+}
+"#,
+    );
+    let runtime = crate::InstalledArtifactRuntime::load(
+        runtime_root,
+        ArtifactRuntimePlatform::detect_current().unwrap_or_else(|error| panic!("{error}")),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let client = ArtifactsClient::from_installed_runtime(runtime);
+    let output_path = temp.path().join("smoke.pptx");
+    let expected_output_path = output_path.display().to_string();
+
+    let output = client
+        .execute_build(ArtifactBuildRequest {
+            source: format!(
+                concat!(
+                    "const presentation = await Presentation.create();\n",
+                    "const slide = presentation.slides.add();\n",
+                    "slide.setLayout('title slide');\n",
+                    "const placeholders = slide.placeholders.getAll();\n",
+                    "placeholders[0].text = 'Artifacts E2E Smoke';\n",
+                    "placeholders[1].text = 'Patched codex binary executed artifacts successfully.';\n",
+                    "const file = await PresentationFile.exportPptx(presentation);\n",
+                    "await file.save({output_path:?});\n",
+                    "console.log({output_path:?});\n"
+                ),
+                output_path = expected_output_path,
+            ),
+            cwd: temp.path().to_path_buf(),
+            timeout: Some(Duration::from_secs(5)),
+            env: BTreeMap::new(),
+        })
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+
+    assert_success(&output);
+    assert_eq!(output.stdout.trim(), expected_output_path);
+
+    let archive = fs::File::open(&output_path).unwrap_or_else(|error| panic!("{error}"));
+    let mut archive = ZipArchive::new(archive).unwrap_or_else(|error| panic!("{error}"));
+    let mut slide_xml = String::new();
+    archive
+        .by_name("ppt/slides/slide1.xml")
+        .unwrap_or_else(|error| panic!("{error}"))
+        .read_to_string(&mut slide_xml)
+        .unwrap_or_else(|error| panic!("{error}"));
+
+    assert!(slide_xml.contains("Artifacts E2E Smoke"));
+    assert!(slide_xml.contains("Patched codex binary executed artifacts successfully."));
+}
+
 fn assert_success(output: &ArtifactCommandOutput) {
     assert!(output.success());
     assert_eq!(output.exit_code, Some(0));
 }
 
 fn write_installed_runtime(install_dir: &Path, runtime_version: &str) {
+    write_installed_runtime_with_source(install_dir, runtime_version, "export const ok = true;\n");
+}
+
+fn write_installed_runtime_with_source(
+    install_dir: &Path,
+    runtime_version: &str,
+    module_source: &str,
+) {
     fs::create_dir_all(install_dir.join("dist")).unwrap_or_else(|error| panic!("{error}"));
     fs::write(
         install_dir.join("package.json"),
@@ -371,11 +777,8 @@ fn write_installed_runtime(install_dir: &Path, runtime_version: &str) {
         .to_string(),
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    fs::write(
-        install_dir.join("dist/artifact_tool.mjs"),
-        "export const ok = true;\n",
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
+    fs::write(install_dir.join("dist/artifact_tool.mjs"), module_source)
+        .unwrap_or_else(|error| panic!("{error}"));
 }
 
 fn build_zip_archive(runtime_version: &str) -> Vec<u8> {

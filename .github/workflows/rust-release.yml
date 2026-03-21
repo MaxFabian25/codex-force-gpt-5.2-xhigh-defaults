@@ -20,6 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Verify pinned artifact runtime release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify_artifact_runtime_release.py \
+            --versions-file codex-rs/core/src/packages/versions.rs
       - uses: dtolnay/rust-toolchain@1.92
       - name: Validate tag matches Cargo.toml version
         shell: bash
