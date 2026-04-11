@@ -5806,12 +5806,12 @@ trust_level = "trusted"
     fn test_set_project_trusted_migrates_top_level_inline_projects_preserving_entries()
     -> anyhow::Result<()> {
         let initial = r#"toplevel = "baz"
-projects = { "/Users/mbolin/code/codex4" = { trust_level = "trusted", foo = "bar" } , "/Users/mbolin/code/codex3" = { trust_level = "trusted" } }
+projects = { "/Users/example/code/codex4" = { trust_level = "trusted", foo = "bar" } , "/Users/example/code/codex3" = { trust_level = "trusted" } }
 model = "foo""#;
         let mut doc = initial.parse::<DocumentMut>()?;
 
         // Approve a new directory
-        let new_project = Path::new("/Users/mbolin/code/codex2");
+        let new_project = Path::new("/Users/example/code/codex2");
         set_project_trust_level_inner(&mut doc, new_project, TrustLevel::Trusted)?;
 
         let contents = doc.to_string();
@@ -5821,14 +5821,14 @@ model = "foo""#;
         let expected = r#"toplevel = "baz"
 model = "foo"
 
-[projects."/Users/mbolin/code/codex4"]
+[projects."/Users/example/code/codex4"]
 trust_level = "trusted"
 foo = "bar"
 
-[projects."/Users/mbolin/code/codex3"]
+[projects."/Users/example/code/codex3"]
 trust_level = "trusted"
 
-[projects."/Users/mbolin/code/codex2"]
+[projects."/Users/example/code/codex2"]
 trust_level = "trusted"
 "#;
         assert_eq!(contents, expected);
